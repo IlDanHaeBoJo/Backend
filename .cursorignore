@@ -1,0 +1,52 @@
+# Virtual Environment
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# Node modules (if any)
+node_modules/
+
+# Database files
+chroma_db/
+*.db
+*.sqlite
+*.sqlite3
+
+# Cache and temp files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+cache/
+temp_audio/
+static/audio/
+
+# Large model files
+models/
+*.pt
+*.pth
+*.model
+
+# Audio files
+*.wav
+*.mp3
+*.aiff
+*.m4a
+*.ogg
+
+# Logs
+*.log
+logs/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE files
+.vscode/
+.idea/ 
+
+/config

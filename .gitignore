@@ -1,0 +1,115 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual Environment
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# Environment Variables
+.env
+.env.local
+.env.production
+.env.staging
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+chroma_db/
+*.chroma
+
+# Audio files (generated)
+static/audio/
+temp_audio/
+cache/
+*.wav
+*.mp3
+*.aiff
+*.m4a
+*.ogg
+
+# Models (Whisper models can be large)
+models/
+*.pt
+*.pth
+*.model
+
+# Jupyter Notebooks
+.ipynb_checkpoints
+
+# pytest
+.pytest_cache/
+.coverage
+htmlcov/
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# FastAPI specific
+__pycache__/
+.pytest_cache/
+
+# Local configuration
+config.yaml
+config.yml
+settings.json
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Backup files
+*.bak
+*.backup 
+
+
+
+/config
