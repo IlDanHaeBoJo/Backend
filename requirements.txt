@@ -3,12 +3,12 @@ uvicorn[standard]==0.24.0
 websockets==12.0
 python-multipart==0.0.6
 openai>=1.6.1
-google-cloud-speech>=2.21.0  # Google Cloud Speech-to-Text Streaming API
-google-cloud-texttospeech>=2.16.0  # Google Cloud Text-to-Speech API
+google-cloud-speech>=2.21.0
+google-cloud-texttospeech>=2.16.0
 langchain==0.0.340
 langchain-openai==0.0.2
 langchain-community==0.0.10
-chromadb==0.4.15  # SQLite 3.34.0과 호환되는 버전
+chromadb==0.4.15
 pydantic==2.5.0
 python-dotenv==1.0.0
 aiofiles==23.2.1
@@ -16,4 +16,7 @@ numpy==1.24.3
 torch==2.1.1
 torchaudio==2.1.1
 soundfile==0.12.1
-librosa==0.10.1 
+librosa==0.10.1
+bcrypt==4.0.1
+sounddevice==0.4.6
+python-jose[cryptography]==3.3.0

@@ -18,7 +18,7 @@ from fastapi.staticfiles import StaticFiles
 
 from core.config import settings
 from core.startup import service_manager
-from routes import api, websocket
+from routes import api, websocket, auth # auth 라우터 추가
 
 logger = logging.getLogger(__name__)
 
@@ -73,6 +73,7 @@ app.add_middleware(
 # 라우터 등록
 app.include_router(api.router, tags=["API"])
 app.include_router(websocket.router, tags=["WebSocket"])
+app.include_router(auth.router, prefix="/auth", tags=["Auth"]) # Auth 라우터 추가
 
 # 정적 파일 서빙 (TTS 오디오 파일)
 app.mount("/static", StaticFiles(directory="static"), name="static")
@@ -88,4 +89,4 @@ if __name__ == "__main__":
         port=settings.PORT,
         reload=settings.DEBUG,
         log_level=settings.LOG_LEVEL.lower()
-    ) 
+    )
