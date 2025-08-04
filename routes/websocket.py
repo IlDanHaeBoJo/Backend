@@ -213,15 +213,16 @@ class AudioProcessor:
         return text
     
     async def _generate_ai_response(self, user_id: str, user_text: str) -> Dict[str, Any]:
-        """AI 응답 생성"""
+        """AI 응답 생성 (시나리오 기반)"""
         try:
-            # RAG 검색
-            relevant_docs = await service_manager.vector_service.search(user_text)
+            # 입력 로깅
+            print(f"\n🎤 사용자 입력: '{user_text}'")
             
-            # LLM 응답 생성
-            response_text = await service_manager.llm_service.generate_response(
-                user_text, relevant_docs, user_id
-            )
+            # LLM 응답 생성 (고정된 시나리오 사용)
+            response_text = await service_manager.llm_service.generate_response(user_text, user_id)
+            
+            # 출력 로깅
+            print(f"🤖 AI 응답: '{response_text}'")
             
             # TTS 생성
             audio_path = await service_manager.tts_service.generate_speech(response_text)
@@ -257,10 +258,14 @@ async def websocket_endpoint(websocket: WebSocket, user_id: str):
     session = audio_processor.get_user_session(user_id)
     
     try:
-        # 연결 확인 메시지
+        # 시나리오 선택 메시지 전송
+        scenarios = service_manager.llm_service.get_available_scenarios()
+        scenario_options = "\n".join([f"{k}. {v}" for k, v in scenarios.items()])
+        
         await websocket.send_text(json.dumps({
-            "type": "connected",
-            "message": f"CPX 시스템에 연결되었습니다. ({user_id})",
+            "type": "scenario_selection",
+            "message": f"🏥 CPX 시스템에 연결되었습니다! ({user_id})\n\n📋 시나리오를 선택해주세요:\n{scenario_options}\n\n번호를 입력하고 음성으로 '시작'이라고 말씀해주세요.",
+            "scenarios": scenarios,
             "avatar_action": "idle"
         }, ensure_ascii=False))
         
@@ -283,8 +288,11 @@ async def websocket_endpoint(websocket: WebSocket, user_id: str):
     except Exception as e:
         logger.error(f"WebSocket 오류: {e}")
     finally:
-        # 세션 정리
+        # 세션 정리 (WebSocket 연결 해제 시)
         audio_processor.clear_user_session(user_id)
+        # LLM 서비스의 사용자 상태도 정리 (메모리 절약)
+        service_manager.llm_service.clear_user_memory(user_id)
+        logger.info(f"🧹 [{user_id}] 모든 사용자 상태 정리 완료")
 
 async def handle_audio_chunk(websocket: WebSocket, user_id: str, audio_chunk: bytes, session: Dict):
     """음성 청크 처리"""
@@ -354,7 +362,32 @@ async def handle_command(websocket: WebSocket, user_id: str, command: Dict):
     """클라이언트 명령 처리"""
     cmd_type = command.get("type", "")
     
-    if cmd_type == "start_session":
+    if cmd_type == "select_scenario":
+        scenario_id = command.get("scenario_id", "")
+        logger.info(f"[{user_id}] 🎭 시나리오 선택: {scenario_id}")
+        
+        # LLM 서비스에 사용자별 시나리오 설정  
+        success = service_manager.llm_service.select_scenario(scenario_id, user_id)
+        
+        if success:
+            scenario_name = service_manager.llm_service.scenarios[scenario_id]["name"]
+            response = {
+                "type": "scenario_selected",
+                "scenario_id": scenario_id,
+                "scenario_name": scenario_name,
+                "message": f"✅ {scenario_name} 선택됨!\n\n이제 환자에게 말을 걸어보세요.",
+                "avatar_action": "ready"
+            }
+        else:
+            response = {
+                "type": "error",
+                "message": f"❌ 잘못된 시나리오 번호입니다: {scenario_id}",
+                "avatar_action": "error"
+            }
+        
+        await websocket.send_text(json.dumps(response, ensure_ascii=False))
+        
+    elif cmd_type == "start_session":
         case_id = command.get("case_id", "IM_001")
         logger.info(f"[{user_id}] 🏥 CPX 세션 시작: {case_id}")
         
