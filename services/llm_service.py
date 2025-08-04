@@ -191,7 +191,69 @@ class LLMService:
             response
         ])
 
+        # 대화 종료 의도 감지 시 LLM에게 자연스러운 마무리 요청
+        if self._detect_conversation_ending(user_input, response_text):
+            response_text = await self._generate_natural_farewell(
+                user_input, response_text, user_state, user_id
+            )
+
         return response_text
+
+    def _detect_conversation_ending(self, user_input: str, ai_response: str) -> bool:
+        """대화 종료 의도 감지 (의사의 마무리 멘트 감지)"""
+        # 의사(사용자)가 진료 마무리할 때 하는 말들
+        doctor_ending_keywords = [
+            "처방해드릴게요", "처방해드리겠습니다", "약을 드리겠습니다",
+            "괜찮으실 거예요", "괜찮을 거예요", "걱정하지 마세요",
+            "조심하세요", "몸조심하세요", "건강하세요", 
+            "더 아프시면 오세요", "악화되면 오세요", "변화있으면 오세요",
+            "안녕히 가세요", "들어가세요", "수고하셨습니다",
+            "진료 마치겠습니다", "이상으로", "오늘은 여기까지"
+        ]
+        
+        # 의사의 마무리 멘트 감지
+        doctor_ending = any(keyword in user_input for keyword in doctor_ending_keywords)
+        
+        return doctor_ending
+
+    async def _generate_natural_farewell(self, doctor_input: str, ai_response: str, user_state: dict, user_id: str) -> str:
+        """LLM을 사용해 대화 맥락에 맞는 자연스러운 마무리 인사 생성"""
+        
+        # 마무리 인사 생성을 위한 특별 프롬프트
+        farewell_prompt = f"""
+{user_state['system_prompt']}
+
+【중요: 지금은 진료가 끝나는 상황입니다】
+의사가 마무리 멘트를 했으므로, 환자로서 자연스럽고 감사한 마음을 담아 인사하세요.
+
+의사의 마지막 말: "{doctor_input}"
+당신의 일반적인 응답: "{ai_response}"
+
+이제 의사에게 감사 인사와 함께 자연스럽게 작별 인사를 하세요.
+- 의사에 대한 감사 표현
+- 처방이나 조언에 대한 수용적 태도  
+- 환자 캐릭터에 맞는 말투 유지
+- 너무 길지 않게, 자연스럽게
+
+응답은 위의 일반적인 응답에 자연스럽게 이어지도록 작성하세요.
+"""
+        
+        # LLM에게 자연스러운 마무리 인사 요청
+        farewell_messages = [SystemMessage(content=farewell_prompt)]
+        farewell_messages.append(HumanMessage(content="자연스러운 마무리 인사를 해 주세요."))
+        
+        try:
+            farewell_response = self.llm(farewell_messages)
+            natural_farewell = farewell_response.content.strip()
+            
+            # 기존 응답과 자연스럽게 결합
+            return f"{ai_response}\n\n{natural_farewell}"
+            
+        except Exception as e:
+            print(f"❌ 마무리 인사 생성 오류: {e}")
+            # 오류 시 기본 마무리 인사 사용
+            default_farewell = "네, 감사합니다 선생님. 안녕히 계세요."
+            return f"{ai_response}\n\n{default_farewell}"
 
     def clear_user_memory(self, user_id: str):
         """사용자 상태 전체 초기화 (대화 기록 + 시나리오)"""
