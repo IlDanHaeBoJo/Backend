@@ -1,6 +1,6 @@
-from fastapi import APIRouter, HTTPException, status, Depends
+from fastapi import APIRouter, HTTPException, status, Depends, Query
 from typing import List
-from models.notice import Notice, NoticeCreate, NoticeUpdate, NoticeType
+from services.notice_service import Notice, NoticeCreate, NoticeUpdate, NoticeStats
 from services.admin_notice_service import admin_notice_service
 from routes.auth import get_current_user
 from utils.permissions import require_role
@@ -68,29 +68,29 @@ async def delete_notice_admin(
         )
     return {"message": "공지사항이 삭제되었습니다."}
 
-@router.get("/important/", summary="중요 공지사항 조회 (관리자용)", response_model=List[Notice])
+@router.get("/priority/", summary="높은 우선순위 공지사항 조회 (관리자용)", response_model=List[Notice])
 @require_role("admin")
-async def get_important_notices_admin(current_user: str = Depends(get_current_user)):
-    """관리자가 중요한 공지사항만 조회합니다."""
+async def get_priority_notices_admin(current_user: str = Depends(get_current_user)):
+    """관리자가 높은 우선순위 공지사항만 조회합니다."""
     return admin_notice_service.get_important_notices()
 
-@router.get("/type/{notice_type}", summary="타입별 공지사항 조회 (관리자용)", response_model=List[Notice])
+@router.get("/priority/{min_priority}", summary="우선순위별 공지사항 조회 (관리자용)", response_model=List[Notice])
 @require_role("admin")
-async def get_notices_by_type_admin(
-    notice_type: NoticeType,
+async def get_notices_by_priority_admin(
+    min_priority: int = 0,
     current_user: str = Depends(get_current_user)
 ):
-    """관리자가 특정 타입의 공지사항만 조회합니다."""
-    return admin_notice_service.get_notices_by_type(notice_type)
+    """관리자가 특정 우선순위 이상의 공지사항을 조회합니다."""
+    return admin_notice_service.get_notices_by_priority(min_priority)
 
-@router.post("/{notice_id}/toggle-important", summary="공지사항 중요도 토글 (관리자용)", response_model=Notice)
+@router.post("/{notice_id}/toggle-priority", summary="공지사항 우선순위 토글 (관리자용)", response_model=Notice)
 @require_role("admin")
-async def toggle_notice_importance(
+async def toggle_notice_priority(
     notice_id: int,
     current_user: str = Depends(get_current_user)
 ):
-    """관리자가 공지사항의 중요도를 토글합니다."""
-    updated_notice = admin_notice_service.toggle_notice_importance(notice_id)
+    """관리자가 공지사항의 우선순위를 토글합니다."""
+    updated_notice = admin_notice_service.toggle_notice_priority(notice_id)
     if not updated_notice:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -98,8 +98,18 @@ async def toggle_notice_importance(
         )
     return updated_notice
 
-@router.get("/statistics/", summary="공지사항 통계 조회 (관리자용)")
+@router.get("/stats/summary", summary="공지사항 통계 요약 (관리자용)", response_model=NoticeStats)
 @require_role("admin")
-async def get_notice_statistics(current_user: str = Depends(get_current_user)):
-    """관리자가 공지사항 통계를 조회합니다."""
-    return admin_notice_service.get_notice_statistics() 
+async def get_notice_statistics_summary(current_user: str = Depends(get_current_user)):
+    """관리자가 공지사항 통계 요약을 조회합니다."""
+    return admin_notice_service.get_notice_statistics()
+
+@router.get("/search/", summary="공지사항 검색 (관리자용)", response_model=List[Notice])
+@require_role("admin")
+async def search_notices_admin(
+    keyword: str = Query(..., description="검색 키워드"),
+    search_type: str = Query("all", description="검색 타입 (all, title, content)"),
+    current_user: str = Depends(get_current_user)
+):
+    """관리자가 키워드로 공지사항을 검색합니다."""
+    return admin_notice_service.search_notices(keyword, search_type) 
