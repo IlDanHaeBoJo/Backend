@@ -16,6 +16,12 @@ class Settings:
     
     # API 키들
     OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
+
+    # JWT 설정
+    SECRET_KEY: str = os.getenv("SECRET_KEY", "your-super-secret-key") # 실제 배포 시에는 반드시 변경하세요!
+    ALGORITHM: str = "HS256"
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 30 # 30분
+    REFRESH_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7 # 7일
     
     # Google Cloud 설정
     GOOGLE_APPLICATION_CREDENTIALS: str = os.getenv("GOOGLE_APPLICATION_CREDENTIALS", "")
@@ -23,6 +29,7 @@ class Settings:
     
     # ChromaDB 설정
     CHROMA_PERSIST_DIRECTORY: str = os.getenv("CHROMA_PERSIST_DIRECTORY", "./chroma_db")
+    # CHROMA_ANALYTICS: bool = os.getenv("CHROMA_ANALYTICS", "false").lower() == "true" # 텔레메트리 비활성화
     
     # 로깅 설정
     LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO")
@@ -62,4 +69,4 @@ def setup_logging(settings: Settings):
 
 # 전역 설정 인스턴스
 settings = Settings()
-setup_logging(settings) 
+setup_logging(settings)
