@@ -105,6 +105,58 @@ python main.py
 uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
+## 🐘 PostgreSQL 설정 (Docker Compose)
+
+이 프로젝트는 Docker Compose를 사용하여 PostgreSQL 데이터베이스를 관리합니다.
+
+### 1. Docker Compose 파일 확인
+`docker-compose.yml` 파일은 PostgreSQL 서비스를 정의합니다.
+
+```yaml
+version: '3.8'
+
+services:
+  db:
+    image: postgres:13-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    ports:
+      - "5432:5432"
+    volumes:
+      - db-data:/var/lib/postgresql/data
+
+volumes:
+  db-data:
+```
+
+### 2. 환경 변수 설정 (`.env`)
+PostgreSQL 연결 정보는 `.env` 파일에서 관리됩니다. 다음 변수들이 `.env` 파일에 정의되어 있는지 확인하거나 추가하세요:
+
+```env
+# ===== PostgreSQL 설정 =====
+POSTGRES_USER=
+POSTGRES_PASSWORD=
+POSTGRES_DB=
+DATABASE_URL=postgresql+asyncpg://{POSTGRES_USER}:{POSTGRES_PASSWORD}@localhost:5432/{POSTGRES_DB}
+```
+
+- `POSTGRES_USER`: PostgreSQL 사용자 이름
+- `POSTGRES_PASSWORD`: PostgreSQL 비밀번호
+- `POSTGRES_DB`: PostgreSQL 데이터베이스 이름
+- `DATABASE_URL`: 애플리케이션에서 데이터베이스에 연결하는 데 사용되는 URL
+
+### 3. PostgreSQL 컨테이너 실행
+프로젝트 루트 디렉토리에서 다음 명령어를 실행하여 PostgreSQL 컨테이너를 시작합니다:
+
+```bash
+docker-compose up -d
+```
+
+- `-d` 옵션은 컨테이너를 백그라운드에서 실행합니다.
+- 컨테이너를 중지하려면 `docker-compose down` 명령어를 사용합니다.
+
 ## 🌐 API 엔드포인트
 
 ### 기본 정보
@@ -227,4 +279,4 @@ Backend/
 
 ## 📧 문의
 
-프로젝트 관련 문의사항이 있으시면 이슈를 생성해 주세요. 
+프로젝트 관련 문의사항이 있으시면 이슈를 생성해 주세요.
