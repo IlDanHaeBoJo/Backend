@@ -37,7 +37,8 @@ class RefreshTokenRequest(BaseModel):
     refresh_token: str
 
 class TokenData(BaseModel):
-    username: Optional[str] = None
+    id: Optional[int] = None # id 필드 추가
+    username: Optional[str] = None # sub 대신 username으로 변경
     role: Optional[str] = None
 
 async def get_current_user(
@@ -53,16 +54,17 @@ async def get_current_user(
     try:
         payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
         print("Decoded JWT payload:", payload)
-        username: str = payload.get("sub")
+        user_id: int = payload.get("id") # id로 가져옴
+        username: str = payload.get("username") # username으로 가져옴
         role: str = payload.get("role")
-        if username is None or role is None:
+        if user_id is None or username is None or role is None:
             raise credentials_exception
-        token_data = TokenData(username=username, role=role)
+        token_data = TokenData(id=user_id, username=username, role=role) # id와 username 사용
         print("token data:",token_data)
     except JWTError:
         raise credentials_exception
     
-    user = await get_user_by_username(db, token_data.username)
+    user = await get_user_by_username(db, token_data.username) # username으로 사용자 조회
     
     if user is None:
         raise credentials_exception
@@ -94,7 +96,7 @@ async def login(user_login: UserLoginSchema, db: AsyncSession = Depends(get_db))
     
     access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(
-        data={"sub": authenticated_user.username, "role": authenticated_user.role}, expires_delta=access_token_expires
+        data={"id": authenticated_user.id, "username": authenticated_user.username, "role": authenticated_user.role}, expires_delta=access_token_expires # id와 username 사용
     )
     
     refresh_token_expires = timedelta(minutes=settings.REFRESH_TOKEN_EXPIRE_MINUTES)
@@ -118,7 +120,7 @@ async def logout(refresh_token_request: RefreshTokenRequest):
     return {"message": "Logged out successfully"}
 
 @router.post("/refresh_token", summary="액세스 토큰 갱신", response_model=Token)
-async def refresh_access_token(refresh_token_request: RefreshTokenRequest):
+async def refresh_access_token(refresh_token_request: RefreshTokenRequest, db: AsyncSession = Depends(get_db)): # db 주입
     print("Current refresh_tokens_db (refresh_token):", refresh_tokens_db)
     username = get_refresh_token_user(refresh_token_request.refresh_token)
     if not username:
@@ -128,9 +130,16 @@ async def refresh_access_token(refresh_token_request: RefreshTokenRequest):
     
     delete_refresh_token(refresh_token_request.refresh_token)
 
+    # username으로 User 객체 조회하여 id와 role 가져오기
+    user = await get_user_by_username(db, username)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found for refresh token"
+        )
+
     access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     new_access_token = create_access_token(
-        data={"sub": username}, expires_delta=access_token_expires
+        data={"id": user.id, "username": user.username, "role": user.role}, expires_delta=access_token_expires # id와 username, role 사용
     )
 
     refresh_token_expires = timedelta(minutes=settings.REFRESH_TOKEN_EXPIRE_MINUTES)
@@ -147,11 +156,11 @@ async def refresh_access_token(refresh_token_request: RefreshTokenRequest):
 @router.delete("/delete_account", summary="회원 탈퇴")
 async def delete_account(
     user_delete: UserDeleteSchema,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user), # User 객체로 유지
     db: AsyncSession = Depends(get_db)
 ):
     print("Current refresh_tokens_db (delete_account):", refresh_tokens_db)
-    if current_user.username != user_delete.username:
+    if current_user.username != user_delete.username: # username 비교
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, detail="Cannot delete another user's account"
         )
@@ -170,17 +179,28 @@ async def delete_account(
     return {"message": "Account deleted successfully"}
 
 @router.get("/me", summary="현재 사용자 정보 가져오기 (보호된 라우트)", response_model=UserCreateSchema)
-async def read_users_me(current_user: User = Depends(get_current_user)):
+async def read_users_me(
+    current_user: User = Depends(get_current_user), # User 객체로 유지
+    db: AsyncSession = Depends(get_db) # db 주입
+):
+    # username으로 User 객체 조회
+    user = await get_user_by_username(db, current_user.username)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
+        )
+
     print("Current refresh_tokens_db (read_users_me):", refresh_tokens_db)
-    if not current_user.user_detail:
-        print(f"Warning: User '{current_user.username}' has no associated UserDetails.")
+    if not user.user_detail:
+        print(f"Warning: User '{user.username}' has no associated UserDetails.")
     
     return UserCreateSchema(
-        username=current_user.username,
+        id=user.id,
+        username=user.username,
         password="[PROTECTED]",
-        email=current_user.user_detail.email if current_user.user_detail else None,
-        name=current_user.user_detail.name if current_user.user_detail else None,
-        role=current_user.role,
-        student_id=current_user.user_detail.student_id if current_user.user_detail else None,
-        major=current_user.user_detail.major if current_user.user_detail else None
+        email=user.user_detail.email if user.user_detail else None,
+        name=user.user_detail.name if user.user_detail else None,
+        role=user.role,
+        student_id=user.user_detail.student_id if user.user_detail else None,
+        major=user.user_detail.major if user.user_detail else None
     )
