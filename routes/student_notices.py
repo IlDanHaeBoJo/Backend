@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException, status, Depends
 from typing import List
-from models.notice import Notice, NoticeType
+from services.notice_service import Notice
 from services.student_notice_service import student_notice_service
 from routes.auth import get_current_user
 
@@ -22,15 +22,15 @@ async def get_notice(notice_id: int):
         )
     return notice
 
-@router.get("/important/", summary="중요 공지사항 조회 (학생용)", response_model=List[Notice])
-async def get_important_notices():
-    """학생이 중요한 공지사항만 조회합니다."""
+@router.get("/priority/", summary="높은 우선순위 공지사항 조회 (학생용)", response_model=List[Notice])
+async def get_priority_notices():
+    """학생이 높은 우선순위 공지사항만 조회합니다."""
     return student_notice_service.get_important_notices()
 
-@router.get("/type/{notice_type}", summary="타입별 공지사항 조회 (학생용)", response_model=List[Notice])
-async def get_notices_by_type(notice_type: NoticeType):
-    """학생이 특정 타입의 공지사항만 조회합니다."""
-    return student_notice_service.get_notices_by_type(notice_type)
+@router.get("/priority/{min_priority}", summary="우선순위별 공지사항 조회 (학생용)", response_model=List[Notice])
+async def get_notices_by_priority(min_priority: int = 0):
+    """학생이 특정 우선순위 이상의 공지사항을 조회합니다."""
+    return student_notice_service.get_notices_by_priority(min_priority)
 
 @router.get("/recent/", summary="최근 공지사항 조회 (학생용)", response_model=List[Notice])
 async def get_recent_notices(limit: int = 5):
