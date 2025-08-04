@@ -19,9 +19,8 @@ class LLMService:
             max_tokens=1000
         )
 
-        self.user_memories = {}  # 사용자별 대화 기록
-        self.current_scenario = None  # 현재 선택된 시나리오
-        self.system_prompt = ""  # 시나리오 선택 후 설정됨
+        # 사용자별 상태 관리 (가장 일반적인 패턴)
+        self.user_states = {}  # user_id -> {scenario, system_prompt, memories}
 
         # 공통 기본 프롬프트
         self.base_prompt = self._get_base_cpx_prompt()
@@ -38,17 +37,30 @@ class LLMService:
             }
         }
 
-    def select_scenario(self, scenario_id: str) -> bool:
-        """시나리오 선택하고 LLM 프롬프트 고정"""
+    def _get_or_create_user_state(self, user_id: str) -> Dict:
+        """사용자 상태 가져오기 또는 생성 (일반적인 패턴)"""
+        if user_id not in self.user_states:
+            self.user_states[user_id] = {
+                'scenario': None,
+                'system_prompt': '',
+                'memories': []
+            }
+        return self.user_states[user_id]
+
+    def select_scenario(self, scenario_id: str, user_id: str) -> bool:
+        """사용자별 시나리오 선택하고 LLM 프롬프트 고정"""
         if scenario_id in self.scenarios:
-            self.current_scenario = scenario_id
+            user_state = self._get_or_create_user_state(user_id)
+            user_state['scenario'] = scenario_id
+            
             # 공통 프롬프트 + 케이스별 정보 조합
             case_info = self.scenarios[scenario_id]["case_info"]
-            self.system_prompt = self.base_prompt + "\n\n" + case_info
-            print(f"✅ 시나리오 선택: {self.scenarios[scenario_id]['name']}")
+            user_state['system_prompt'] = self.base_prompt + "\n\n" + case_info
+            
+            print(f"✅ [{user_id}] 시나리오 선택: {self.scenarios[scenario_id]['name']}")
             return True
         else:
-            print(f"❌ 존재하지 않는 시나리오: {scenario_id}")
+            print(f"❌ [{user_id}] 존재하지 않는 시나리오: {scenario_id}")
             return False
 
     def get_available_scenarios(self) -> Dict[str, str]:
@@ -149,20 +161,20 @@ class LLMService:
 """
 
     async def generate_response(self, user_input: str, user_id: str = "default") -> str:
-        """사용자 입력에 대한 AI 응답 생성 (RAG 의존성 제거)"""
-        if not self.current_scenario:
+        """사용자 입력에 대한 AI 응답 생성 (사용자별 상태 관리)"""
+        user_state = self._get_or_create_user_state(user_id)
+        
+        # 사용자별 시나리오 확인
+        if not user_state['scenario']:
             return "먼저 시나리오를 선택해주세요."
 
-        # 대화 기록 관리 (최근 5개만)
-        if user_id not in self.user_memories:
-            self.user_memories[user_id] = []
+        # 사용자별 대화 기록 사용
+        memory = user_state['memories']
 
-        memory = self.user_memories[user_id]
+        # 메시지 구성 (사용자별 시나리오 프롬프트 사용)
+        messages = [SystemMessage(content=user_state['system_prompt'])]
 
-        # 메시지 구성 (고정된 시나리오 프롬프트 사용)
-        messages = [SystemMessage(content=self.system_prompt)]
-
-        # 최근 대화 추가
+        # 최근 대화 추가 (최근 5개만)
         for msg in memory[-5:]:
             messages.extend(msg)
 
@@ -173,7 +185,7 @@ class LLMService:
         response = self.llm(messages)
         response_text = response.content.strip()
 
-        # 대화 기록 저장
+        # 사용자별 대화 기록 저장
         memory.append([
             HumanMessage(content=user_input),
             response
@@ -182,15 +194,18 @@ class LLMService:
         return response_text
 
     def clear_user_memory(self, user_id: str):
-        """사용자 대화 기록 초기화"""
-        if user_id in self.user_memories:
-            del self.user_memories[user_id]
+        """사용자 상태 전체 초기화 (대화 기록 + 시나리오)"""
+        if user_id in self.user_states:
+            del self.user_states[user_id]
+            print(f"✅ [{user_id}] 사용자 상태 초기화 완료")
 
     def get_conversation_summary(self, user_id: str) -> str:
-        """대화 요약"""
-        if user_id not in self.user_memories:
+        """사용자별 대화 요약"""
+        user_state = self._get_or_create_user_state(user_id)
+        
+        if not user_state['memories']:
             return "대화 내역이 없습니다."
 
-        count = len(self.user_memories[user_id])
-        scenario_name = self.scenarios[self.current_scenario]["name"] if self.current_scenario else "시나리오 미선택"
+        count = len(user_state['memories'])
+        scenario_name = self.scenarios[user_state['scenario']]["name"] if user_state['scenario'] else "시나리오 미선택"
         return f"현재 시나리오: {scenario_name}\n총 {count}번의 대화가 있었습니다."

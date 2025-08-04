@@ -288,8 +288,11 @@ async def websocket_endpoint(websocket: WebSocket, user_id: str):
     except Exception as e:
         logger.error(f"WebSocket 오류: {e}")
     finally:
-        # 세션 정리
+        # 세션 정리 (WebSocket 연결 해제 시)
         audio_processor.clear_user_session(user_id)
+        # LLM 서비스의 사용자 상태도 정리 (메모리 절약)
+        service_manager.llm_service.clear_user_memory(user_id)
+        logger.info(f"🧹 [{user_id}] 모든 사용자 상태 정리 완료")
 
 async def handle_audio_chunk(websocket: WebSocket, user_id: str, audio_chunk: bytes, session: Dict):
     """음성 청크 처리"""
@@ -363,8 +366,8 @@ async def handle_command(websocket: WebSocket, user_id: str, command: Dict):
         scenario_id = command.get("scenario_id", "")
         logger.info(f"[{user_id}] 🎭 시나리오 선택: {scenario_id}")
         
-        # LLM 서비스에 시나리오 설정  
-        success = service_manager.llm_service.select_scenario(scenario_id)
+        # LLM 서비스에 사용자별 시나리오 설정  
+        success = service_manager.llm_service.select_scenario(scenario_id, user_id)
         
         if success:
             scenario_name = service_manager.llm_service.scenarios[scenario_id]["name"]
