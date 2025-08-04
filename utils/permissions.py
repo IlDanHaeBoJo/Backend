@@ -20,13 +20,20 @@ def require_role(required_role: str):
                 )
             
             # 실제 구현에서는 사용자 역할을 확인해야 함
-            # 현재는 간단히 admin 사용자만 관리자 권한을 가진다고 가정
-            if required_role == "admin" and current_user != "admin":
+            # JWT 토큰에서 추출된 사용자 객체의 role 속성 확인
+            if not hasattr(current_user, 'role'):
+                logger.warning(f"User object {current_user} has no 'role' attribute.")
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
-                    detail="관리자 권한이 필요합니다."
+                    detail="사용자 역할 정보를 찾을 수 없습니다."
+                )
+
+            if current_user.role != required_role:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=f"{required_role} 권한이 필요합니다."
                 )
             
             return await func(*args, **kwargs)
         return wrapper
-    return decorator 
+    return decorator
