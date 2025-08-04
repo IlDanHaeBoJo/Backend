@@ -2,6 +2,9 @@ import os
 import logging
 from pathlib import Path
 from dotenv import load_dotenv
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+from sqlalchemy.orm import sessionmaker, declarative_base
+from pathlib import Path
 
 # 환경변수 로드
 load_dotenv()
@@ -43,6 +46,9 @@ class Settings:
     TEMP_AUDIO_DIR: Path = Path("temp_audio")
     STATIC_AUDIO_DIR: Path = Path("static/audio")
     CACHE_DIR: Path = Path("cache")
+
+    # PostgreSQL 설정
+    DATABASE_URL: str = os.getenv("DATABASE_URL","")
     
     def __init__(self):
         """설정 초기화 및 검증"""
@@ -54,6 +60,10 @@ class Settings:
         # 필수 API 키 검증
         if not self.OPENAI_API_KEY:
             raise ValueError("OPENAI_API_KEY가 설정되지 않았습니다.")
+        
+        # 필수 데이터베이스 URL 검증
+        if not self.DATABASE_URL:
+            raise ValueError("DATABASE_URL이 설정되지 않았습니다.")
     
     @property
     def is_production(self) -> bool:
@@ -70,3 +80,13 @@ def setup_logging(settings: Settings):
 # 전역 설정 인스턴스
 settings = Settings()
 setup_logging(settings)
+
+# 데이터베이스 설정
+engine = create_async_engine(settings.DATABASE_URL, echo=True)
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine, class_=AsyncSession)
+Base = declarative_base()
+
+async def get_db():
+    """데이터베이스 세션 의존성"""
+    async with SessionLocal() as session:
+        yield session
