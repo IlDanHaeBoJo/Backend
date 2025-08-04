@@ -257,6 +257,22 @@ async def main():
     print("🎤 CPX 마이크 테스트 클라이언트")
     print("=" * 50)
     
+    # 시나리오 선택
+    print("\n📋 시나리오 선택:")
+    print("1. 흉통 케이스 (김철수, 45세 남성)")
+    print("2. 복통 케이스 (박영희, 32세 여성)")
+    
+    while True:
+        try:
+            choice = input("\n시나리오 번호를 선택하세요 (1 or 2): ").strip()
+            if choice in ["1", "2"]:
+                break
+            else:
+                print("❌ 1 또는 2를 입력해주세요.")
+        except KeyboardInterrupt:
+            print("\n👋 프로그램을 종료합니다.")
+            return
+    
     client = MicrophoneClient()
     
     try:
@@ -264,9 +280,16 @@ async def main():
         if not await client.connect():
             return
         
-        # CPX 세션 시작
-        await client.start_cpx_session("IM_001")
-        await asyncio.sleep(1)  # 응답 대기
+        # 시나리오 선택 메시지 전송
+        scenario_message = {
+            "type": "select_scenario",
+            "scenario_id": choice
+        }
+        await client.websocket.send(json.dumps(scenario_message))
+        
+        print(f"✅ 시나리오 {choice}번 선택됨!")
+        print("🎤 마이크 녹음을 시작합니다. 환자에게 말을 걸어보세요!")
+        await asyncio.sleep(2)  # 시나리오 설정 대기
         
         # 마이크 녹음 시작
         await client.start_recording()
