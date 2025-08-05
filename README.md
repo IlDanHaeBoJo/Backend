@@ -301,6 +301,22 @@ Backend/
    - 잔액 확인
    - 네트워크 연결 확인
 
+4.  **SQLAlchemy `MissingGreenlet` 오류**
+    *   **문제:** `routes/auth.py`의 `get_current_user` 함수에서 `user.user_detail`에 접근할 때, `user_detail` 관계가 지연 로딩(lazy loading)되어 비동기 컨텍스트 밖에서 데이터베이스 접근이 시도되면서 `sqlalchemy.exc.MissingGreenlet` 오류가 발생했습니다.
+    *   **해결:** `services/user_service.py`의 `get_user_by_username` 함수에서 `User`를 조회할 때 `selectinload(User.user_detail)`를 사용하여 `user_detail` 관계를 미리 로드(eager loading)하도록 수정했습니다.
+
+### 인증 및 사용자 관리 관련
+
+1.  **회원가입 및 사용자 정보 응답에 비밀번호 노출 위험**
+    *   **문제:** 초기 구현에서는 회원가입 성공 응답 및 현재 사용자 정보 조회 응답에 비밀번호 필드가 포함될 수 있었습니다. 이는 보안상 취약점입니다.
+    *   **해결:** `services/user_service.py`에 비밀번호를 제외한 `UserResponseSchema`를 새로 정의하고, `routes/auth.py`의 `/register` 및 `/me` 엔드포인트의 `response_model`을 `UserResponseSchema`로 변경하여 민감한 정보가 노출되지 않도록 개선했습니다.
+
+### 공지사항 중요도 필드 변경 관련
+
+1.  **`priority` 필드에서 `important` 필드로 변경**
+    *   **문제:** 기존 공지사항 모델의 중요도 필드가 `priority` (정수형)로 되어 있어, 중요 여부를 나타내는 데 비효율적이었습니다.
+    *   **해결:** `core/models.py`의 `Notices` 모델에서 `priority` 필드를 `important` (Boolean) 필드로 변경했습니다.
+
 ## 📧 문의
 
 프로젝트 관련 문의사항이 있으시면 이슈를 생성해 주세요.

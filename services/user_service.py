@@ -33,6 +33,18 @@ class UserDeleteSchema(BaseModel):
     username: str
     password: str
 
+class UserResponseSchema(BaseModel):
+    id: int
+    username: str
+    email: str
+    name: str
+    role: str
+    student_id: Optional[str] = None
+    major: Optional[str] = None
+
+    class Config:
+        from_attributes = True # Pydantic v2에서 orm_mode 대신 사용
+
 def hash_password(password: str) -> str:
     """Hashes a password using bcrypt."""
     return pwd_context.hash(password)
