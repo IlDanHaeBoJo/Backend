@@ -1,16 +1,20 @@
 from typing import List, Optional, Dict
-from datetime import datetime
+from datetime import datetime, timedelta
 import logging
 from pydantic import BaseModel, Field
+from sqlalchemy.ext.asyncio import AsyncSession # AsyncSession 임포트
+from sqlalchemy import or_
+from sqlalchemy.future import select # 비동기 쿼리용 select 임포트
+from core.models import Notices as DBNotice # DB 모델과 Pydantic 모델 이름 충돌 방지
 
 logger = logging.getLogger(__name__)
 
-# 임시 모델 정의 (실제로는 models/notice.py에 있어야 함)
+# Pydantic 모델 정의
 class NoticeBase(BaseModel):
     """공지사항 기본 모델"""
     title: str = Field(..., max_length=255, description="공지사항 제목")
     content: str = Field(..., description="공지사항 내용")
-    priority: int = Field(default=0, ge=0, le=100, description="공지사항 중요도 (0-100)")
+    important: bool = Field(default=False, description="공지사항 중요 여부")
     author_id: int = Field(..., description="작성자 ID")
 
 class NoticeCreate(NoticeBase):
@@ -21,7 +25,7 @@ class NoticeUpdate(BaseModel):
     """공지사항 수정 모델"""
     title: Optional[str] = Field(None, max_length=255, description="공지사항 제목")
     content: Optional[str] = Field(None, description="공지사항 내용")
-    priority: Optional[int] = Field(None, ge=0, le=100, description="공지사항 중요도 (0-100)")
+    important: Optional[bool] = Field(None, description="공지사항 중요 여부")
 
 class Notice(NoticeBase):
     """공지사항 응답 모델"""
@@ -40,182 +44,125 @@ class NoticeStats(BaseModel):
     """공지사항 통계 모델"""
     total_notices: int = Field(..., description="총 공지사항 수")
     total_views: int = Field(..., description="총 조회수")
-    average_priority: float = Field(..., description="평균 우선순위")
-    high_priority_count: int = Field(..., description="높은 우선순위 공지사항 수")
+    important_notice_count: int = Field(..., description="중요 공지사항 수")
     recent_notices_count: int = Field(..., description="최근 7일 공지사항 수")
 
 class NoticeService:
-    def __init__(self):
-        # 메모리 기반 저장소 (실제로는 데이터베이스 사용)
-        self.notices: Dict[int, Notice] = {}
-        self._counter = 1
-        self._initialize_sample_data()
+    # __init__ 메서드 제거
     
-    def _initialize_sample_data(self):
-        """샘플 공지사항 데이터 초기화"""
-        sample_notices = [
-            {
-                "title": "[필수] 2024년 1학기 CPX 실습 일정 변경 안내",
-                "content": "코로나 상황으로 인해 기존 대면 실습에서 온라인 실습으로 변경됩니다. 자세한 내용은 본문을 확인해주세요.",
-                "priority": 90,
-                "author_id": 1,
-                "view_count": 150,
-                "created_at": datetime(2024, 1, 15),
-                "updated_at": datetime(2024, 1, 15)
-            },
-            {
-                "title": "CPX 평가 기준 업데이트 안내",
-                "content": "2024학년도부터 새로운 CPX 평가 기준에 대해 안내드립니다.",
-                "priority": 50,
-                "author_id": 1,
-                "view_count": 89,
-                "created_at": datetime(2024, 1, 10),
-                "updated_at": datetime(2024, 1, 10)
-            },
-            {
-                "title": "시스템 점검 안내 (1월 20일 02:00~04:00)",
-                "content": "정기 시스템 점검으로 인해 해당 시간 동안 서비스 이용이 제한됩니다.",
-                "priority": 30,
-                "author_id": 2,
-                "view_count": 45,
-                "created_at": datetime(2024, 1, 8),
-                "updated_at": datetime(2024, 1, 8)
-            },
-            {
-                "title": "신규 업데이트: 음성인식 기능 개선",
-                "content": "CPX 실습 음성 인식 정확도가 크게 향상되었습니다. 더욱 자연스러운 대화가 가능합니다.",
-                "priority": 20,
-                "author_id": 1,
-                "view_count": 120,
-                "created_at": datetime(2024, 1, 5),
-                "updated_at": datetime(2024, 1, 5)
-            }
-        ]
-        
-        for notice_data in sample_notices:
-            self.create_notice(NoticeCreate(**notice_data))
-    
-    def get_all_notices(self) -> List[Notice]:
+    async def get_all_notices(self, db: AsyncSession) -> List[Notice]:
         """모든 공지사항 조회"""
-        notices = list(self.notices.values())
-        # 최신순으로 정렬
-        notices.sort(key=lambda x: x.created_at, reverse=True)
-        return notices
+        result = await db.execute(select(DBNotice).order_by(DBNotice.created_at.desc()))
+        db_notices = result.scalars().all()
+        return [Notice.model_validate(notice) for notice in db_notices]
     
-    def get_notice_by_id(self, notice_id: int) -> Optional[Notice]:
+    async def get_notice_by_id(self, db: AsyncSession, notice_id: int) -> Optional[Notice]:
         """ID로 공지사항 조회"""
-        return self.notices.get(notice_id)
+        result = await db.execute(select(DBNotice).filter(DBNotice.notice_id == notice_id))
+        db_notice = result.scalars().first()
+        if db_notice:
+            return Notice.model_validate(db_notice)
+        return None
     
-    def create_notice(self, notice_data: NoticeCreate) -> Notice:
+    async def create_notice(self, db: AsyncSession, notice_data: NoticeCreate) -> Notice:
         """새 공지사항 생성"""
-        now = datetime.now()
-        notice = Notice(
-            notice_id=self._counter,
-            title=notice_data.title,
-            content=notice_data.content,
-            priority=notice_data.priority,
-            author_id=notice_data.author_id,
-            view_count=0,
-            created_at=now,
-            updated_at=now
-        )
+        db_notice = DBNotice(**notice_data.model_dump())
         
-        self.notices[self._counter] = notice
-        self._counter += 1
+        db.add(db_notice)
+        await db.commit()
+        await db.refresh(db_notice)
         
-        logger.info(f"새 공지사항 생성: {notice.title}")
-        return notice
+        logger.info(f"새 공지사항 생성: {db_notice.title}")
+        return Notice.model_validate(db_notice)
     
-    def update_notice(self, notice_id: int, notice_data: NoticeUpdate) -> Optional[Notice]:
+    async def update_notice(self, db: AsyncSession, notice_id: int, notice_data: NoticeUpdate) -> Optional[Notice]:
         """공지사항 수정"""
-        if notice_id not in self.notices:
+        result = await db.execute(select(DBNotice).filter(DBNotice.notice_id == notice_id))
+        db_notice = result.scalars().first()
+        if not db_notice:
             return None
         
-        notice = self.notices[notice_id]
-        
         if notice_data.title is not None:
-            notice.title = notice_data.title
+            db_notice.title = notice_data.title
         if notice_data.content is not None:
-            notice.content = notice_data.content
-        if notice_data.priority is not None:
-            notice.priority = notice_data.priority
+            db_notice.content = notice_data.content
+        if notice_data.important is not None:
+            db_notice.important = notice_data.important
         
-        notice.updated_at = datetime.now()
+        await db.commit()
+        await db.refresh(db_notice)
         
-        logger.info(f"공지사항 수정: {notice.title}")
-        return notice
+        logger.info(f"공지사항 수정: {db_notice.title}")
+        return Notice.model_validate(db_notice)
     
-    def delete_notice(self, notice_id: int) -> bool:
+    async def delete_notice(self, db: AsyncSession, notice_id: int) -> bool:
         """공지사항 삭제"""
-        if notice_id not in self.notices:
+        result = await db.execute(select(DBNotice).filter(DBNotice.notice_id == notice_id))
+        db_notice = result.scalars().first()
+        if not db_notice:
             return False
         
-        notice = self.notices.pop(notice_id)
-        logger.info(f"공지사항 삭제: {notice.title}")
+        await db.delete(db_notice)
+        await db.commit()
+        logger.info(f"공지사항 삭제: {db_notice.title}")
         return True
     
-    def get_important_notices(self) -> List[Notice]:
-        """높은 우선순위 공지사항만 조회 (priority >= 50)"""
-        important_notices = [notice for notice in self.notices.values() if notice.priority >= 50]
-        important_notices.sort(key=lambda x: x.priority, reverse=True)
-        return important_notices
+    async def get_important_notices(self, db: AsyncSession) -> List[Notice]:
+        """중요 공지사항만 조회"""
+        result = await db.execute(select(DBNotice).filter(DBNotice.important == True).order_by(DBNotice.created_at.desc()))
+        db_notices = result.scalars().all()
+        return [Notice.model_validate(notice) for notice in db_notices]
     
-    def get_notices_by_priority(self, min_priority: int = 0) -> List[Notice]:
-        """우선순위별 공지사항 조회"""
-        filtered_notices = [notice for notice in self.notices.values() if notice.priority >= min_priority]
-        filtered_notices.sort(key=lambda x: x.priority, reverse=True)
-        return filtered_notices
-    
-    def increment_view_count(self, notice_id: int) -> bool:
+    async def increment_view_count(self, db: AsyncSession, notice_id: int) -> bool:
         """공지사항 조회수 증가"""
-        if notice_id not in self.notices:
+        result = await db.execute(select(DBNotice).filter(DBNotice.notice_id == notice_id))
+        db_notice = result.scalars().first()
+        if not db_notice:
             return False
         
-        self.notices[notice_id].view_count += 1
+        db_notice.view_count += 1
+        await db.commit()
+        await db.refresh(db_notice)
         return True
     
-    def get_notice_statistics(self) -> NoticeStats:
+    async def get_notice_statistics(self, db: AsyncSession) -> NoticeStats:
         """공지사항 통계 조회"""
-        notices = list(self.notices.values())
-        if not notices:
+        result = await db.execute(select(DBNotice))
+        db_notices = result.scalars().all()
+        if not db_notices:
             return NoticeStats(
                 total_notices=0,
                 total_views=0,
-                average_priority=0.0,
-                high_priority_count=0,
+                important_notice_count=0,
                 recent_notices_count=0
             )
         
-        total_notices = len(notices)
-        total_views = sum(notice.view_count for notice in notices)
-        average_priority = sum(notice.priority for notice in notices) / total_notices
-        high_priority_count = len([n for n in notices if n.priority >= 50])
+        total_notices = len(db_notices)
+        total_views = sum(notice.view_count for notice in db_notices)
+        important_notice_count = len([n for n in db_notices if n.important])
         
         # 최근 7일 공지사항 수
-        from datetime import timedelta
         week_ago = datetime.now() - timedelta(days=7)
-        recent_notices_count = len([n for n in notices if n.created_at >= week_ago])
+        recent_notices_count = len([n for n in db_notices if n.created_at >= week_ago])
         
         return NoticeStats(
             total_notices=total_notices,
             total_views=total_views,
-            average_priority=round(average_priority, 2),
-            high_priority_count=high_priority_count,
+            important_notice_count=important_notice_count,
             recent_notices_count=recent_notices_count
         )
     
-    def search_notices(self, keyword: str) -> List[Notice]:
+    async def search_notices(self, db: AsyncSession, keyword: str) -> List[Notice]:
         """키워드로 공지사항 검색"""
-        keyword_lower = keyword.lower()
-        search_results = []
+        keyword_lower = f"%{keyword.lower()}%"
+        result = await db.execute(
+            select(DBNotice).filter(
+                or_(
+                    DBNotice.title.ilike(keyword_lower), 
+                    DBNotice.content.ilike(keyword_lower)
+                )
+            ).order_by(DBNotice.created_at.desc())
+        )
+        db_notices = result.scalars().all()
         
-        for notice in self.notices.values():
-            if (keyword_lower in notice.title.lower() or 
-                keyword_lower in notice.content.lower()):
-                search_results.append(notice)
-        
-        search_results.sort(key=lambda x: x.priority, reverse=True)
-        return search_results
-
-# 전역 서비스 인스턴스
-notice_service = NoticeService() 
+        return [Notice.model_validate(notice) for notice in db_notices]
