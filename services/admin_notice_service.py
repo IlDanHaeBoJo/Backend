@@ -34,28 +34,23 @@ async def delete_notice(db: AsyncSession, notice_id: int, notice_service: Notice
     return await notice_service.delete_notice(db, notice_id)
 
 async def get_important_notices(db: AsyncSession, notice_service: NoticeService) -> List[Notice]:
-    """높은 우선순위 공지사항만 조회 (관리자용)"""
+    """중요 공지사항만 조회 (관리자용)"""
     logger.info("관리자가 중요 공지사항을 조회했습니다.")
     return await notice_service.get_important_notices(db)
 
-async def get_notices_by_priority(db: AsyncSession, notice_service: NoticeService, min_priority: int = 0) -> List[Notice]:
-    """우선순위별 공지사항 조회 (관리자용)"""
-    logger.info(f"관리자가 우선순위 {min_priority} 이상 공지사항을 조회했습니다.")
-    return await notice_service.get_notices_by_priority(db, min_priority)
-
-async def toggle_notice_priority(db: AsyncSession, notice_id: int, notice_service: NoticeService) -> Optional[Notice]:
-    """공지사항 우선순위 토글 (관리자용) - 높은 우선순위로 변경"""
-    logger.info(f"관리자가 공지사항 ID {notice_id}의 우선순위를 토글했습니다.")
+async def toggle_notice_important(db: AsyncSession, notice_id: int, notice_service: NoticeService) -> Optional[Notice]:
+    """공지사항 중요 여부 토글 (관리자용)"""
+    logger.info(f"관리자가 공지사항 ID {notice_id}의 중요 여부를 토글했습니다.")
     notice = await notice_service.get_notice_by_id(db, notice_id)
     if not notice:
         return None
     
-    # 우선순위를 높은 값으로 토글 (50 이상이면 0으로, 아니면 80으로)
-    new_priority = 0 if notice.priority >= 50 else 80
+    # important 필드를 토글
+    new_important_status = not notice.important
     updated_notice = await notice_service.update_notice(
         db, 
         notice_id, 
-        NoticeUpdate(priority=new_priority)
+        NoticeUpdate(important=new_important_status)
     )
     return updated_notice
 
