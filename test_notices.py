@@ -19,7 +19,7 @@ def test_student_notices():
         notices = response.json()
         print(f"공지사항 개수: {len(notices)}")
         for notice in notices:
-            print(f"  - {notice['title']} (우선순위: {notice['priority']})")
+            print(f"  - {notice['title']} (중요: {notice['important']})")
     
     # 2. 높은 우선순위 공지사항 조회
     print("\n2. 높은 우선순위 공지사항 조회")
@@ -29,7 +29,7 @@ def test_student_notices():
         notices = response.json()
         print(f"높은 우선순위 공지사항 개수: {len(notices)}")
         for notice in notices:
-            print(f"  - {notice['title']} (우선순위: {notice['priority']})")
+            print(f"  - {notice['title']} (중요: {notice['important']})")
     
     # 3. 최근 공지사항 조회
     print("\n3. 최근 공지사항 조회")
@@ -69,14 +69,14 @@ def test_admin_notices():
             notices = response.json()
             print(f"공지사항 개수: {len(notices)}")
             for notice in notices:
-                print(f"  - {notice['title']} (우선순위: {notice['priority']})")
+                print(f"  - {notice['title']} (중요: {notice['important']})")
         
         # 3. 새 공지사항 생성
         print("\n3. 새 공지사항 생성")
         new_notice = {
             "title": "테스트 공지사항",
             "content": "이것은 테스트용 공지사항입니다.",
-            "priority": 20,
+            "important": True,
             "author_id": 1
         }
         response = requests.post(f"{BASE_URL}/admin/notices/", json=new_notice, headers=headers)
@@ -90,7 +90,7 @@ def test_admin_notices():
             notice_id = created_notice["notice_id"]
             update_data = {
                 "title": "수정된 테스트 공지사항",
-                "priority": 25
+                "important": False
             }
             response = requests.put(f"{BASE_URL}/admin/notices/{notice_id}", json=update_data, headers=headers)
             print(f"Status: {response.status_code}")
@@ -114,8 +114,7 @@ def test_admin_notices():
             stats = response.json()
             print(f"총 공지사항: {stats['total_notices']}")
             print(f"총 조회수: {stats['total_views']}")
-            print(f"평균 우선순위: {stats['average_priority']}")
-            print(f"높은 우선순위 공지사항: {stats['high_priority_count']}")
+            print(f"중요 공지사항: {stats['important_notice_count']}")
             print(f"최근 7일 공지사항: {stats['recent_notices_count']}")
         
         # 7. 검색 기능

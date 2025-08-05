@@ -22,14 +22,9 @@ class StudentNoticeService:
         return await notice_service.get_notice_by_id(db, notice_id)
     
     async def get_important_notices(self, db: AsyncSession, notice_service: NoticeService) -> List[Notice]:
-        """높은 우선순위 공지사항만 조회 (학생용)"""
+        """중요 공지사항만 조회 (학생용)"""
         logger.info("학생이 중요 공지사항을 조회했습니다.")
         return await notice_service.get_important_notices(db)
-    
-    async def get_notices_by_priority(self, db: AsyncSession, notice_service: NoticeService, min_priority: int = 0) -> List[Notice]:
-        """우선순위별 공지사항 조회 (학생용)"""
-        logger.info(f"학생이 우선순위 {min_priority} 이상 공지사항을 조회했습니다.")
-        return await notice_service.get_notices_by_priority(db, min_priority)
     
     async def get_recent_notices(self, db: AsyncSession, notice_service: NoticeService, limit: int = 5) -> List[Notice]:
         """최근 공지사항 조회 (학생용)"""
