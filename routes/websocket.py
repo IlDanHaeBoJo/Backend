@@ -36,6 +36,7 @@ class AudioProcessor:
                 "max_silence_duration": 1.0,  # 빠른 응답
                 "is_processing": False,  # STT 처리 중 플래그
                 "should_cancel": False,  # 처리 취소 플래그
+                "conversation_ended": False,  # 대화 종료 플래그
             }
         return self.user_sessions[user_id]
     
@@ -143,6 +144,11 @@ class AudioProcessor:
                         temp_path.unlink()
                     return
                 
+                # 대화 종료 확인 및 세션에 플래그 설정
+                if response_data.get("conversation_ended", False):
+                    session["conversation_ended"] = True
+                    logger.info(f"🏁 [{user_id}] 세션에 대화 종료 플래그 설정 - 이후 음성 처리 차단")
+                
                 # WebSocket으로 응답 전송
                 await websocket.send_text(json.dumps(response_data, ensure_ascii=False))
             else:
@@ -219,7 +225,9 @@ class AudioProcessor:
             print(f"\n🎤 사용자 입력: '{user_text}'")
             
             # LLM 응답 생성 (고정된 시나리오 사용)
-            response_text = await service_manager.llm_service.generate_response(user_text, user_id)
+            llm_response = await service_manager.llm_service.generate_response(user_text, user_id)
+            response_text = llm_response["text"]
+            conversation_ended = llm_response["conversation_ended"]
             
             # 출력 로깅
             print(f"🤖 AI 응답: '{response_text}'")
@@ -228,21 +236,32 @@ class AudioProcessor:
             audio_path = await service_manager.tts_service.generate_speech(response_text)
             
             # 응답 데이터 구성
-            return {
+            response_data = {
                 "type": "voice_response",
                 "user_text": user_text,
                 "ai_text": response_text,
                 "audio_url": f"/static/audio/{Path(audio_path).name}" if audio_path else None,
                 "avatar_action": "talking",
-                "processing_time": "실시간"
+                "processing_time": "실시간",
+                "conversation_ended": conversation_ended
             }
+            
+            # 대화 종료 시 특별 처리
+            if conversation_ended:
+                response_data["type"] = "conversation_ended"
+                response_data["avatar_action"] = "goodbye"
+                response_data["message"] = "진료가 완료되었습니다. 세션이 곧 종료됩니다."
+                print(f"🏁 [{user_id}] 대화 종료 - 음성 처리를 중단합니다")
+            
+            return response_data
             
         except Exception as e:
             logger.error(f"AI 응답 생성 오류: {e}")
             return {
                 "type": "error",
                 "message": "응답 생성 중 오류가 발생했습니다.",
-                "avatar_action": "error"
+                "avatar_action": "error",
+                "conversation_ended": False
             }
 
 # 오디오 프로세서 인스턴스
@@ -297,6 +316,11 @@ async def websocket_endpoint(websocket: WebSocket, user_id: str):
 async def handle_audio_chunk(websocket: WebSocket, user_id: str, audio_chunk: bytes, session: Dict):
     """음성 청크 처리"""
     try:
+        # 대화 종료 확인 - 종료된 경우 음성 처리 차단
+        if session.get("conversation_ended", False):
+            logger.info(f"🔒 [{user_id}] 대화 종료됨 - 음성 처리 차단")
+            return
+        
         # 오디오 버퍼에 추가
         session["audio_buffer"].extend(audio_chunk)
         
