@@ -11,6 +11,7 @@ FastAPI 기반 실시간 음성 AI 서버
 
 import logging
 from contextlib import asynccontextmanager
+from dotenv import load_dotenv # load_dotenv 임포트
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -21,6 +22,9 @@ from core.startup import service_manager
 from routes import api, websocket, auth, student_notices, admin_notices # 라우터 추가
 
 logger = logging.getLogger(__name__)
+
+# 환경변수 로드 (uvicorn이 별도 프로세스로 실행될 때를 대비)
+load_dotenv()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -64,7 +68,7 @@ app = FastAPI(
 # CORS 설정
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # 개발환경용 - 프로덕션에서는 제한 필요
+    allow_origins=settings.FRONTEND_ORIGINS,  # 환경 변수에서 로드
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

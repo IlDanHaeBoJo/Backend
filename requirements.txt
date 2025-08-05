@@ -17,6 +17,8 @@ torch==2.1.1
 torchaudio==2.1.1
 soundfile==0.12.1
 librosa==0.10.1
-bcrypt==4.0.1
 sounddevice==0.4.6
 python-jose[cryptography]==3.3.0
+asyncpg==0.29.0
+SQLAlchemy==2.0.23
+passlib[bcrypt]==1.7.4

@@ -1,20 +1,34 @@
 from fastapi import APIRouter, HTTPException, status, Depends
 from typing import List
-from models.notice import Notice, NoticeType
-from services.student_notice_service import student_notice_service
+from sqlalchemy.ext.asyncio import AsyncSession # AsyncSession 임포트
+from core.config import get_db # get_db 임포트
+from services.notice_service import Notice, NoticeService # NoticeService 임포트
+from services.student_notice_service import StudentNoticeService # StudentNoticeService 클래스 임포트
 from routes.auth import get_current_user
+from core.models import User # User 모델 임포트
 
 router = APIRouter(prefix="/student/notices", tags=["학생용 공지사항"])
 
 @router.get("/", summary="모든 공지사항 조회 (학생용)", response_model=List[Notice])
-async def get_all_notices():
+async def get_all_notices(
+    db: AsyncSession = Depends(get_db),
+    notice_service: NoticeService = Depends(NoticeService),
+    current_user: User = Depends(get_current_user) # User 객체로 변경
+):
     """학생이 모든 공지사항을 최신순으로 조회합니다."""
-    return student_notice_service.get_all_notices()
+    student_notice_service_instance = StudentNoticeService()
+    return await student_notice_service_instance.get_all_notices(db, notice_service)
 
 @router.get("/{notice_id}", summary="특정 공지사항 조회 (학생용)", response_model=Notice)
-async def get_notice(notice_id: int):
+async def get_notice(
+    notice_id: int,
+    db: AsyncSession = Depends(get_db),
+    notice_service: NoticeService = Depends(NoticeService),
+    current_user: User = Depends(get_current_user) # User 객체로 변경
+):
     """학생이 ID로 특정 공지사항을 조회합니다."""
-    notice = student_notice_service.get_notice_by_id(notice_id)
+    student_notice_service_instance = StudentNoticeService()
+    notice = await student_notice_service_instance.get_notice_by_id(db, notice_id, notice_service)
     if not notice:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -23,21 +37,34 @@ async def get_notice(notice_id: int):
     return notice
 
 @router.get("/important/", summary="중요 공지사항 조회 (학생용)", response_model=List[Notice])
-async def get_important_notices():
-    """학생이 중요한 공지사항만 조회합니다."""
-    return student_notice_service.get_important_notices()
+async def get_important_notices(
+    db: AsyncSession = Depends(get_db),
+    notice_service: NoticeService = Depends(NoticeService),
+    current_user: User = Depends(get_current_user) # User 객체로 변경
+):
+    """학생이 높은 우선순위 공지사항만 조회합니다."""
+    student_notice_service_instance = StudentNoticeService()
+    return await student_notice_service_instance.get_important_notices(db, notice_service)
 
-@router.get("/type/{notice_type}", summary="타입별 공지사항 조회 (학생용)", response_model=List[Notice])
-async def get_notices_by_type(notice_type: NoticeType):
-    """학생이 특정 타입의 공지사항만 조회합니다."""
-    return student_notice_service.get_notices_by_type(notice_type)
 
 @router.get("/recent/", summary="최근 공지사항 조회 (학생용)", response_model=List[Notice])
-async def get_recent_notices(limit: int = 5):
+async def get_recent_notices(
+    limit: int = 5,
+    db: AsyncSession = Depends(get_db),
+    notice_service: NoticeService = Depends(NoticeService),
+    current_user: User = Depends(get_current_user) # User 객체로 변경
+):
     """학생이 최근 공지사항을 조회합니다 (기본 5개)."""
-    return student_notice_service.get_recent_notices(limit)
+    student_notice_service_instance = StudentNoticeService()
+    return await student_notice_service_instance.get_recent_notices(db, notice_service, limit)
 
 @router.get("/search/", summary="공지사항 검색 (학생용)", response_model=List[Notice])
-async def search_notices(keyword: str):
+async def search_notices(
+    keyword: str,
+    db: AsyncSession = Depends(get_db),
+    notice_service: NoticeService = Depends(NoticeService),
+    current_user: User = Depends(get_current_user) # User 객체로 변경
+):
     """학생이 키워드로 공지사항을 검색합니다."""
-    return student_notice_service.search_notices(keyword) 
+    student_notice_service_instance = StudentNoticeService()
+    return await student_notice_service_instance.search_notices(db, keyword, notice_service)
