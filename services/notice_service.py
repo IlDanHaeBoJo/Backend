@@ -14,7 +14,7 @@ class NoticeBase(BaseModel):
     """공지사항 기본 모델"""
     title: str = Field(..., max_length=255, description="공지사항 제목")
     content: str = Field(..., description="공지사항 내용")
-    priority: int = Field(default=0, ge=0, le=100, description="공지사항 중요도 (0-100)")
+    important: bool = Field(default=False, description="공지사항 중요 여부")
     author_id: int = Field(..., description="작성자 ID")
 
 class NoticeCreate(NoticeBase):
@@ -25,7 +25,7 @@ class NoticeUpdate(BaseModel):
     """공지사항 수정 모델"""
     title: Optional[str] = Field(None, max_length=255, description="공지사항 제목")
     content: Optional[str] = Field(None, description="공지사항 내용")
-    priority: Optional[int] = Field(None, ge=0, le=100, description="공지사항 중요도 (0-100)")
+    important: Optional[bool] = Field(None, description="공지사항 중요 여부")
 
 class Notice(NoticeBase):
     """공지사항 응답 모델"""
@@ -44,8 +44,7 @@ class NoticeStats(BaseModel):
     """공지사항 통계 모델"""
     total_notices: int = Field(..., description="총 공지사항 수")
     total_views: int = Field(..., description="총 조회수")
-    average_priority: float = Field(..., description="평균 우선순위")
-    high_priority_count: int = Field(..., description="높은 우선순위 공지사항 수")
+    important_notice_count: int = Field(..., description="중요 공지사항 수")
     recent_notices_count: int = Field(..., description="최근 7일 공지사항 수")
 
 class NoticeService:
@@ -87,8 +86,8 @@ class NoticeService:
             db_notice.title = notice_data.title
         if notice_data.content is not None:
             db_notice.content = notice_data.content
-        if notice_data.priority is not None:
-            db_notice.priority = notice_data.priority
+        if notice_data.important is not None:
+            db_notice.important = notice_data.important
         
         await db.commit()
         await db.refresh(db_notice)
@@ -109,14 +108,8 @@ class NoticeService:
         return True
     
     async def get_important_notices(self, db: AsyncSession) -> List[Notice]:
-        """높은 우선순위 공지사항만 조회 (priority >= 50)"""
-        result = await db.execute(select(DBNotice).filter(DBNotice.priority >= 50).order_by(DBNotice.priority.desc()))
-        db_notices = result.scalars().all()
-        return [Notice.model_validate(notice) for notice in db_notices]
-    
-    async def get_notices_by_priority(self, db: AsyncSession, min_priority: int = 0) -> List[Notice]:
-        """우선순위별 공지사항 조회"""
-        result = await db.execute(select(DBNotice).filter(DBNotice.priority >= min_priority).order_by(DBNotice.priority.desc()))
+        """중요 공지사항만 조회"""
+        result = await db.execute(select(DBNotice).filter(DBNotice.important == True).order_by(DBNotice.created_at.desc()))
         db_notices = result.scalars().all()
         return [Notice.model_validate(notice) for notice in db_notices]
     
@@ -140,15 +133,13 @@ class NoticeService:
             return NoticeStats(
                 total_notices=0,
                 total_views=0,
-                average_priority=0.0,
-                high_priority_count=0,
+                important_notice_count=0,
                 recent_notices_count=0
             )
         
         total_notices = len(db_notices)
         total_views = sum(notice.view_count for notice in db_notices)
-        average_priority = sum(notice.priority for notice in db_notices) / total_notices
-        high_priority_count = len([n for n in db_notices if n.priority >= 50])
+        important_notice_count = len([n for n in db_notices if n.important])
         
         # 최근 7일 공지사항 수
         week_ago = datetime.now() - timedelta(days=7)
@@ -157,8 +148,7 @@ class NoticeService:
         return NoticeStats(
             total_notices=total_notices,
             total_views=total_views,
-            average_priority=round(average_priority, 2),
-            high_priority_count=high_priority_count,
+            important_notice_count=important_notice_count,
             recent_notices_count=recent_notices_count
         )
     
@@ -171,7 +161,7 @@ class NoticeService:
                     DBNotice.title.ilike(keyword_lower), 
                     DBNotice.content.ilike(keyword_lower)
                 )
-            ).order_by(DBNotice.priority.desc())
+            ).order_by(DBNotice.created_at.desc())
         )
         db_notices = result.scalars().all()
         

@@ -5,7 +5,7 @@ from core.config import get_db # get_db 임포트
 from services.notice_service import Notice, NoticeCreate, NoticeUpdate, NoticeStats, NoticeService # NoticeService 임포트
 from services.admin_notice_service import ( # AdminNoticeService 함수들 임포트
     get_all_notices, get_notice_by_id, create_notice, update_notice, delete_notice,
-    get_important_notices, get_notices_by_priority, toggle_notice_priority,
+    get_important_notices, toggle_notice_important,
     get_notice_statistics, search_notices
 )
 from routes.auth import get_current_user
@@ -90,9 +90,9 @@ async def delete_notice_admin(
         )
     return {"message": "공지사항이 삭제되었습니다."}
 
-@router.get("/priority/", summary="높은 우선순위 공지사항 조회 (관리자용)", response_model=List[Notice])
+@router.get("/important/", summary="중요 공지사항 조회 (관리자용)", response_model=List[Notice])
 @require_role("admin")
-async def get_priority_notices_admin(
+async def get_important_notices_admin(
     db: AsyncSession = Depends(get_db),
     notice_service: NoticeService = Depends(NoticeService),
     current_user: User = Depends(get_current_user) # User 객체로 변경
@@ -100,27 +100,16 @@ async def get_priority_notices_admin(
     """관리자가 높은 우선순위 공지사항만 조회합니다."""
     return await get_important_notices(db, notice_service)
 
-@router.get("/priority/{min_priority}", summary="우선순위별 공지사항 조회 (관리자용)", response_model=List[Notice])
+@router.post("/{notice_id}/toggle-important", summary="공지사항 중요 여부 토글 (관리자용)", response_model=Notice)
 @require_role("admin")
-async def get_notices_by_priority_admin(
-    min_priority: int = 0,
-    db: AsyncSession = Depends(get_db),
-    notice_service: NoticeService = Depends(NoticeService),
-    current_user: User = Depends(get_current_user) # User 객체로 변경
-):
-    """관리자가 특정 우선순위 이상의 공지사항을 조회합니다."""
-    return await get_notices_by_priority(db, notice_service, min_priority)
-
-@router.post("/{notice_id}/toggle-priority", summary="공지사항 우선순위 토글 (관리자용)", response_model=Notice)
-@require_role("admin")
-async def toggle_notice_priority_admin(
+async def toggle_notice_important_admin(
     notice_id: int,
     db: AsyncSession = Depends(get_db),
     notice_service: NoticeService = Depends(NoticeService),
     current_user: User = Depends(get_current_user) # User 객체로 변경
 ):
-    """관리자가 공지사항의 우선순위를 토글합니다."""
-    updated_notice = await toggle_notice_priority(db, notice_id, notice_service)
+    """관리자가 공지사항의 중요 여부를 토글합니다."""
+    updated_notice = await toggle_notice_important(db, notice_id, notice_service)
     if not updated_notice:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
