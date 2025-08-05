@@ -29,12 +29,14 @@ env/
 ENV/
 env.bak/
 venv.bak/
+.venv/
 
 # Environment Variables
 .env
 .env.local
 .env.production
 .env.staging
+rest-client.env.json
 
 # Google Cloud Keys
 gcloud-key.json
@@ -115,8 +117,7 @@ temp/
 
 # Backup files
 *.bak
-*.backup 
+*.backup
 
-
-
-/config
+# Node modules
+node_modules/
