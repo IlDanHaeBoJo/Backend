@@ -160,13 +160,13 @@ class LLMService:
 - 통증으로 인한 불편함을 솔직하게 표현
 """
 
-    async def generate_response(self, user_input: str, user_id: str = "default") -> str:
+    async def generate_response(self, user_input: str, user_id: str = "default") -> dict:
         """사용자 입력에 대한 AI 응답 생성 (사용자별 상태 관리)"""
         user_state = self._get_or_create_user_state(user_id)
         
         # 사용자별 시나리오 확인
         if not user_state['scenario']:
-            return "먼저 시나리오를 선택해주세요."
+            return {"text": "먼저 시나리오를 선택해주세요.", "conversation_ended": False}
 
         # 사용자별 대화 기록 사용
         memory = user_state['memories']
@@ -191,13 +191,16 @@ class LLMService:
             response
         ])
 
-        # 대화 종료 의도 감지 시 LLM에게 자연스러운 마무리 요청
+        # 대화 종료 의도 감지
+        conversation_ended = False
         if self._detect_conversation_ending(user_input, response_text):
             response_text = await self._generate_natural_farewell(
                 user_input, response_text, user_state, user_id
             )
+            conversation_ended = True
+            print(f"🏁 [{user_id}] 대화 종료 감지됨 - 음성 처리 중단됩니다")
 
-        return response_text
+        return {"text": response_text, "conversation_ended": conversation_ended}
 
     def _detect_conversation_ending(self, user_input: str, ai_response: str) -> bool:
         """대화 종료 의도 감지 (의사의 마무리 멘트 감지)"""
