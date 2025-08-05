@@ -36,8 +36,8 @@ async def get_notice(
         )
     return notice
 
-@router.get("/priority/", summary="높은 우선순위 공지사항 조회 (학생용)", response_model=List[Notice])
-async def get_priority_notices(
+@router.get("/important/", summary="중요 공지사항 조회 (학생용)", response_model=List[Notice])
+async def get_important_notices(
     db: AsyncSession = Depends(get_db),
     notice_service: NoticeService = Depends(NoticeService),
     current_user: User = Depends(get_current_user) # User 객체로 변경
@@ -46,16 +46,6 @@ async def get_priority_notices(
     student_notice_service_instance = StudentNoticeService()
     return await student_notice_service_instance.get_important_notices(db, notice_service)
 
-@router.get("/priority/{min_priority}", summary="우선순위별 공지사항 조회 (학생용)", response_model=List[Notice])
-async def get_notices_by_priority(
-    min_priority: int = 0,
-    db: AsyncSession = Depends(get_db),
-    notice_service: NoticeService = Depends(NoticeService),
-    current_user: User = Depends(get_current_user) # User 객체로 변경
-):
-    """학생이 특정 우선순위 이상의 공지사항을 조회합니다."""
-    student_notice_service_instance = StudentNoticeService()
-    return await student_notice_service_instance.get_notices_by_priority(db, notice_service, min_priority)
 
 @router.get("/recent/", summary="최근 공지사항 조회 (학생용)", response_model=List[Notice])
 async def get_recent_notices(
