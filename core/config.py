@@ -22,9 +22,9 @@ class Settings:
 
     # JWT 설정
     SECRET_KEY: str = os.getenv("SECRET_KEY", "your-super-secret-key") # 실제 배포 시에는 반드시 변경하세요!
-    ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 30 # 30분
-    REFRESH_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7 # 7일
+    ALGORITHM: str = os.getenv("ALGORITHM", "HS256")
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", 30))
+    REFRESH_TOKEN_EXPIRE_MINUTES: int = int(os.getenv("REFRESH_TOKEN_EXPIRE_MINUTES", 60 * 24 * 7))
     
     # Google Cloud 설정
     GOOGLE_APPLICATION_CREDENTIALS: str = os.getenv("GOOGLE_APPLICATION_CREDENTIALS", "")
@@ -64,7 +64,6 @@ class Settings:
         # 필수 데이터베이스 URL 검증
         if not self.DATABASE_URL:
             raise ValueError("DATABASE_URL이 설정되지 않았습니다.")
-    
     @property
     def is_production(self) -> bool:
         """프로덕션 환경 여부"""
