@@ -1,5 +1,7 @@
 import logging
 from google.cloud import speech
+from core.config import settings, Base, engine # Base와 engine 임포트
+import core.models # 모델 정의를 로드하여 Base.metadata에 등록
 
 # SQLite 버전 업그레이드를 위해 pysqlite3를 sqlite3로 대체
 try:
@@ -11,7 +13,6 @@ except ImportError:
     import sqlite3
     logging.getLogger(__name__).warning("⚠️  pysqlite3 없음, 기본 sqlite3 사용")
 
-from core.config import settings
 from services.llm_service import LLMService
 from services.tts_service import TTSService
 from services.vector_service import VectorService
@@ -37,6 +38,12 @@ class ServiceManager:
             
         try:
             logger.info("🚀 서비스 초기화 시작...")
+            
+            # 데이터베이스 테이블 생성
+            logger.info("📊 데이터베이스 테이블 생성 중...")
+            async with engine.begin() as conn:
+                await conn.run_sync(Base.metadata.create_all)
+            logger.info("✅ 데이터베이스 테이블 생성 완료!")
             
             # Google Cloud Speech-to-Text API 초기화
             await self._initialize_speech_service()

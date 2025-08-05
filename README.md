@@ -105,6 +105,82 @@ python main.py
 uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
+## 🐘 PostgreSQL 설정 (Docker Compose)
+
+이 프로젝트는 Docker Compose를 사용하여 PostgreSQL 데이터베이스를 관리합니다.
+
+### 1. Docker Compose 파일 확인
+`docker-compose.yml` 파일은 PostgreSQL 서비스를 정의합니다.
+
+```yaml
+version: '3.8'
+
+services:
+  db:
+    image: postgres:13-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    ports:
+      - "5432:5432"
+    volumes:
+      - db-data:/var/lib/postgresql/data
+
+volumes:
+  db-data:
+```
+
+### 2. 환경 변수 설정 (`.env`)
+PostgreSQL 연결 정보는 `.env` 파일에서 관리됩니다. 다음 변수들이 `.env` 파일에 정의되어 있는지 확인하거나 추가하세요:
+
+```env
+# ===== PostgreSQL 설정 =====
+POSTGRES_USER=
+POSTGRES_PASSWORD=
+POSTGRES_DB=
+DATABASE_URL=postgresql+asyncpg://{POSTGRES_USER}:{POSTGRES_PASSWORD}@localhost:5432/{POSTGRES_DB}
+```
+
+- `POSTGRES_USER`: PostgreSQL 사용자 이름
+- `POSTGRES_PASSWORD`: PostgreSQL 비밀번호
+- `POSTGRES_DB`: PostgreSQL 데이터베이스 이름
+- `DATABASE_URL`: 애플리케이션에서 데이터베이스에 연결하는 데 사용되는 URL
+
+### 3. PostgreSQL 컨테이너 실행
+프로젝트 루트 디렉토리에서 다음 명령어를 실행하여 PostgreSQL 컨테이너를 시작합니다:
+
+```bash
+docker-compose up -d
+```
+
+- `-d` 옵션은 컨테이너를 백그라운드에서 실행합니다.
+- 컨테이너를 중지하려면 `docker-compose down` 명령어를 사용합니다.
+
+### 4. PostgreSQL 데이터베이스 접근
+실행 중인 PostgreSQL 컨테이너에 접근하여 데이터베이스를 관리할 수 있습니다.
+
+1. **컨테이너 이름 확인**:
+   다음 명령어를 사용하여 실행 중인 Docker 컨테이너 목록에서 PostgreSQL 컨테이너의 이름을 확인합니다. 일반적으로 `docker-compose.yml`에 정의된 서비스 이름(`db`)과 프로젝트 디렉토리 이름이 조합된 형태입니다 (예: `backend-db-1`).
+
+   ```bash
+   docker ps
+   ```
+
+2. **데이터베이스 접근**:
+   확인된 컨테이너 이름을 사용하여 `psql` 클라이언트로 데이터베이스에 접속합니다.
+
+   ```bash
+   docker exec -it [컨테이너 이름] psql -U ${POSTGRES_USER} -d ${POSTGRES_DB}
+   ```
+
+   예시:
+   ```bash
+   docker exec -it backend-db-1 psql -U postgre -d IlDanHaeBoJo
+   ```
+
+   접속 후에는 PostgreSQL 명령어를 직접 실행할 수 있습니다.
+
 ## 🌐 API 엔드포인트
 
 ### 기본 정보
@@ -225,6 +301,22 @@ Backend/
    - 잔액 확인
    - 네트워크 연결 확인
 
+4.  **SQLAlchemy `MissingGreenlet` 오류**
+    *   **문제:** `routes/auth.py`의 `get_current_user` 함수에서 `user.user_detail`에 접근할 때, `user_detail` 관계가 지연 로딩(lazy loading)되어 비동기 컨텍스트 밖에서 데이터베이스 접근이 시도되면서 `sqlalchemy.exc.MissingGreenlet` 오류가 발생했습니다.
+    *   **해결:** `services/user_service.py`의 `get_user_by_username` 함수에서 `User`를 조회할 때 `selectinload(User.user_detail)`를 사용하여 `user_detail` 관계를 미리 로드(eager loading)하도록 수정했습니다.
+
+### 인증 및 사용자 관리 관련
+
+1.  **회원가입 및 사용자 정보 응답에 비밀번호 노출 위험**
+    *   **문제:** 초기 구현에서는 회원가입 성공 응답 및 현재 사용자 정보 조회 응답에 비밀번호 필드가 포함될 수 있었습니다. 이는 보안상 취약점입니다.
+    *   **해결:** `services/user_service.py`에 비밀번호를 제외한 `UserResponseSchema`를 새로 정의하고, `routes/auth.py`의 `/register` 및 `/me` 엔드포인트의 `response_model`을 `UserResponseSchema`로 변경하여 민감한 정보가 노출되지 않도록 개선했습니다.
+
+### 공지사항 중요도 필드 변경 관련
+
+1.  **`priority` 필드에서 `important` 필드로 변경**
+    *   **문제:** 기존 공지사항 모델의 중요도 필드가 `priority` (정수형)로 되어 있어, 중요 여부를 나타내는 데 비효율적이었습니다.
+    *   **해결:** `core/models.py`의 `Notices` 모델에서 `priority` 필드를 `important` (Boolean) 필드로 변경했습니다.
+
 ## 📧 문의
 
-프로젝트 관련 문의사항이 있으시면 이슈를 생성해 주세요. 
+프로젝트 관련 문의사항이 있으시면 이슈를 생성해 주세요.
