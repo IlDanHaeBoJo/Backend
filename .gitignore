@@ -36,6 +36,13 @@ venv.bak/
 .env.production
 .env.staging
 
+# Google Cloud Keys
+gcloud-key.json
+*.json
+!package.json
+!package-lock.json
+!tsconfig.json
+
 # IDE
 .vscode/
 .idea/
