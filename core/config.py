@@ -49,6 +49,9 @@ class Settings:
 
     # PostgreSQL 설정
     DATABASE_URL: str = os.getenv("DATABASE_URL","")
+
+    # CORS 설정
+    FRONTEND_ORIGINS: list[str] = os.getenv("FRONTEND_ORIGINS", "").split(",")
     
     def __init__(self):
         """설정 초기화 및 검증"""
@@ -64,6 +67,7 @@ class Settings:
         # 필수 데이터베이스 URL 검증
         if not self.DATABASE_URL:
             raise ValueError("DATABASE_URL이 설정되지 않았습니다.")
+        print(self.FRONTEND_ORIGINS)
     @property
     def is_production(self) -> bool:
         """프로덕션 환경 여부"""
