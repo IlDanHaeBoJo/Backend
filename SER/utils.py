@@ -1,8 +1,5 @@
-"""
-음성 감정 분석을 위한 유틸리티 함수들
-"""
-
 import os
+import re
 import json
 import pickle
 import numpy as np
@@ -455,3 +452,34 @@ def print_system_info():
         pass
     
     print("=" * 60)
+
+def extract_number_from_filename(filename: str) -> Optional[int]:
+    """F####_######.wav 형식에서 마지막 한 자리 추출"""
+    try:
+        # F로 시작하는 모든 파일에서 마지막 숫자의 마지막 한 자리 추출
+        match = re.search(r'F\d+_\d*(\d)\.wav', filename)
+        if match:
+            return int(match.group(1))
+        return None
+    except (ValueError, AttributeError):
+        return None
+
+def get_emotion_from_filename(filename: str) -> Optional[str]:
+    """파일명에서 번호를 추출하여 감정 라벨 반환"""
+    try:
+        match = re.search(r'_(\d{6})\.', filename)
+        if not match:
+            return None
+        
+        file_num = int(match.group(1))
+        
+        if 21 <= file_num <= 30:
+            return "Anxious"
+        elif 31 <= file_num <= 40:
+            return "Kind"
+        elif 91 <= file_num <= 100:
+            return "Dry"
+        else:
+            return None
+    except (ValueError, AttributeError):
+        return None
