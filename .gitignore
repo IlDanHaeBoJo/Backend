@@ -112,4 +112,19 @@ temp/
 
 
 
-/config
+/config# 대용량 파일 제외
+*.safetensors
+*.bin
+*.pth
+*.pt
+*.tar.gz
+*.jsonl
+results/
+results_*/
+checkpoint-*/
+datasets/
+docker/
+*.wav
+*.m4a
+*.mp3
+__pycache__/
