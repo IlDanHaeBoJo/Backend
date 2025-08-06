@@ -339,8 +339,19 @@ def evaluate_model(model, dataloader, device):
 def train_model(model, train_loader, val_loader, device, num_epochs=3, learning_rate=3e-5):
     """직접 훈련 루프"""
     
-    # 옵티마이저 설정
-    optimizer = optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=0.01)
+    # 옵티마이저 설정 (차등 학습률 적용)
+    print("🚀 옵티마이저 설정 (차등 학습률 적용)")
+    optimizer_grouped_parameters = [
+        {
+            "params": [p for n, p in model.named_parameters() if "wav2vec2" in n],
+            "lr": 1e-5,  # 사전 훈련된 Backbone은 낮은 학습률
+        },
+        {
+            "params": [p for n, p in model.named_parameters() if "wav2vec2" not in n],
+            "lr": 1e-4,  # 새로 추가된 Classifier와 Adversary는 높은 학습률
+        },
+    ]
+    optimizer = optim.AdamW(optimizer_grouped_parameters, weight_decay=0.01)
     
     # 스케줄러 설정
     total_steps = len(train_loader) * num_epochs
