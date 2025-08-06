@@ -16,6 +16,7 @@ except ImportError:
 from services.llm_service import LLMService
 from services.tts_service import TTSService
 from services.vector_service import VectorService
+from services.evaluation_service import EvaluationService
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +28,7 @@ class ServiceManager:
         self.speech_config = None
         self.llm_service = None
         self.tts_service = None
+        self.evaluation_service = None
         self.vector_service = None
         self._initialized = False
     
@@ -87,6 +89,11 @@ class ServiceManager:
         # TTS 서비스 초기화
         self.tts_service = TTSService()
         logger.info("✅ TTS 서비스 초기화 완료")
+
+        # Evaluatuin 서비스 초기화
+        self.evaluation_service = EvaluationService()
+        logger.info("✅ Evaluation 서비스 초기화 완료")
+
         
         # 벡터 서비스 초기화 (SQLite 이슈 처리)
         try:
