@@ -25,6 +25,7 @@ class Settings:
     ALGORITHM: str = os.getenv("ALGORITHM", "HS256")
     ACCESS_TOKEN_EXPIRE_MINUTES: int = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", 30))
     REFRESH_TOKEN_EXPIRE_MINUTES: int = int(os.getenv("REFRESH_TOKEN_EXPIRE_MINUTES", 60 * 24 * 7))
+    VERIFICATION_CODE_EXPIRE_MINUTES: int = int(os.getenv("VERIFICATION_CODE_EXPIRE_MINUTES", 5)) # 본인 확인 코드 만료 시간 (분)
     
     # Google Cloud 설정
     GOOGLE_APPLICATION_CREDENTIALS: str = os.getenv("GOOGLE_APPLICATION_CREDENTIALS", "")
@@ -52,6 +53,18 @@ class Settings:
 
     # CORS 설정
     FRONTEND_ORIGINS: list[str] = os.getenv("FRONTEND_ORIGINS", "").split(",")
+
+    # 이메일 설정
+    MAIL_USERNAME: str = os.getenv("MAIL_USERNAME", "")
+    MAIL_PASSWORD: str = os.getenv("MAIL_PASSWORD", "")
+    MAIL_FROM: str = os.getenv("MAIL_FROM", "")
+    MAIL_PORT: int = int(os.getenv("MAIL_PORT", 587))
+    MAIL_SERVER: str = os.getenv("MAIL_SERVER", "")
+    MAIL_FROM_NAME: str = os.getenv("MAIL_FROM_NAME", "Your App Name")
+    MAIL_STARTTLS: bool = os.getenv("MAIL_STARTTLS", "true").lower() == "true"
+    MAIL_SSL_TLS: bool = os.getenv("MAIL_SSL_TLS", "false").lower() == "true"
+    USE_CREDENTIALS: bool = os.getenv("USE_CREDENTIALS", "true").lower() == "true"
+    VALIDATE_CERTS: bool = os.getenv("VALIDATE_CERTS", "true").lower() == "true"
     
     def __init__(self):
         """설정 초기화 및 검증"""
@@ -67,6 +80,11 @@ class Settings:
         # 필수 데이터베이스 URL 검증
         if not self.DATABASE_URL:
             raise ValueError("DATABASE_URL이 설정되지 않았습니다.")
+        
+        # 이메일 설정 검증 (필요에 따라 추가)
+        if self.USE_CREDENTIALS and (not self.MAIL_USERNAME or not self.MAIL_PASSWORD or not self.MAIL_SERVER or not self.MAIL_FROM):
+            print("경고: 이메일 전송을 위한 MAIL_USERNAME, MAIL_PASSWORD, MAIL_SERVER, MAIL_FROM 환경 변수가 설정되지 않았습니다.")
+
         print(self.FRONTEND_ORIGINS)
     @property
     def is_production(self) -> bool:
