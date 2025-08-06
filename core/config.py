@@ -2,6 +2,7 @@ import os
 import logging
 from pathlib import Path
 from dotenv import load_dotenv
+from datetime import datetime
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker, declarative_base
 from pathlib import Path
@@ -43,7 +44,9 @@ class Settings:
     AUDIO_SAMPLE_WIDTH: int = 2  # 16-bit
     
     # 디렉토리 설정
-    TEMP_AUDIO_DIR: Path = Path("temp_audio")
+    TEMP_AUDIO_DIR: Path = Path("temp_audio")  # 루트 temp 디렉터리
+    RUN_ID: str = ""  # 서비스 실행 시각 구분용 (init에서 설정)
+    SESSION_AUDIO_DIR: Path = None  # TEMP_AUDIO_DIR/RUN_ID
     STATIC_AUDIO_DIR: Path = Path("static/audio")
     CACHE_DIR: Path = Path("cache")
 
@@ -59,6 +62,8 @@ class Settings:
         self.TEMP_AUDIO_DIR.mkdir(parents=True, exist_ok=True)
         self.STATIC_AUDIO_DIR.mkdir(parents=True, exist_ok=True)
         self.CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        # 현재 프로세스 고유 식별자
+        self.RUN_ID = datetime.now().strftime("%Y%m%d_%H%M%S")
         
         # 필수 API 키 검증
         if not self.OPENAI_API_KEY:
