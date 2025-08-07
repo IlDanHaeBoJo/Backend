@@ -38,11 +38,7 @@ class Notices(Base):
     notice_id = Column(Integer, primary_key=True, index=True, comment='공지사항 고유 식별자')
     title = Column(String(255), nullable=False, comment='공지사항 제목')
     content = Column(Text, nullable=False, comment='공지사항 내용')
-<<<<<<< HEAD
     priority = Column(Integer, default=0, comment='공지사항 중요도 (높을수록 상단 노출 등, 0이 기본)')
-=======
-    important = Column(Boolean, default=False, comment='공지사항 중요 여부 (True면 중요 공지)')
->>>>>>> upstream/main
     author_id = Column(Integer, ForeignKey("users.id"), nullable=False, comment='작성자 ID (users 테이블의 user_id 참조)')
     view_count = Column(Integer, default=0, comment='조회수')
     created_at = Column(DateTime(timezone=True), server_default=func.now(), comment='공지사항 생성 시간')

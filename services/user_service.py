@@ -6,12 +6,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload # selectinload 임포트 추가
 from passlib.context import CryptContext
-<<<<<<< HEAD
-=======
 import secrets # secrets 모듈 임포트
 import string # string 모듈 임포트
 from fastapi_mail import FastMail, MessageSchema, ConnectionConfig # FastAPI-Mail 임포트
->>>>>>> upstream/main
 
 from core.config import settings
 from core.models import User, UserDetails # UserDetails 모델 임포트
@@ -22,8 +19,6 @@ refresh_tokens_db: Dict[str, Dict[str, str]] = {} # {refresh_token_id: {"usernam
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-<<<<<<< HEAD
-=======
 conf = ConnectionConfig(
     MAIL_USERNAME=settings.MAIL_USERNAME,
     MAIL_PASSWORD=settings.MAIL_PASSWORD,
@@ -37,7 +32,6 @@ conf = ConnectionConfig(
     VALIDATE_CERTS=settings.VALIDATE_CERTS
 )
 
->>>>>>> upstream/main
 class UserCreateSchema(BaseModel):
     username: str
     password: str
@@ -55,8 +49,6 @@ class UserDeleteSchema(BaseModel):
     username: str
     password: str
 
-<<<<<<< HEAD
-=======
 class PasswordChangeSchema(BaseModel):
     current_password: str
     new_password: str
@@ -69,7 +61,6 @@ class VerifyCodeRequestSchema(BaseModel):
     email: str
     code: str
 
->>>>>>> upstream/main
 class UserResponseSchema(BaseModel):
     id: int
     username: str
@@ -82,12 +73,9 @@ class UserResponseSchema(BaseModel):
     class Config:
         from_attributes = True # Pydantic v2에서 orm_mode 대신 사용
 
-<<<<<<< HEAD
-=======
 # In-memory storage for verification codes: {email: {"code": "...", "expires": datetime}}
 verification_codes_db: Dict[str, Dict[str, str]] = {}
 
->>>>>>> upstream/main
 def hash_password(password: str) -> str:
     """Hashes a password using bcrypt."""
     return pwd_context.hash(password)
@@ -213,8 +201,6 @@ async def get_user_by_username(db: AsyncSession, username: str) -> Optional[User
     )
     print("result:",result)
     return result.scalar_one_or_none()
-<<<<<<< HEAD
-=======
 
 async def get_user_by_email(db: AsyncSession, email: str) -> Optional[User]:
     """Retrieves a user by email from the database, eagerly loading user_detail."""
@@ -291,4 +277,3 @@ async def send_temporary_password_email(email: str, temp_password: str):
         print(f"이메일 전송 실패: {e}")
         # 실제 애플리케이션에서는 사용자에게 적절한 오류 메시지를 반환해야 합니다.
         raise e # 예외를 다시 발생시켜 상위 호출자에게 알림
->>>>>>> upstream/main

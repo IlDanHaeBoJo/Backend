@@ -16,16 +16,6 @@ from services.user_service import (
     get_refresh_token_user,
     delete_refresh_token,
     get_user_by_username,
-<<<<<<< HEAD
-    UserCreateSchema,
-    UserLoginSchema,
-    UserDeleteSchema,
-    UserResponseSchema, # UserResponseSchema 임포트 추가
-    refresh_tokens_db
-)
-from core.config import settings, get_db
-from core.models import User
-=======
     get_user_by_email, # get_user_by_email 임포트 추가
     update_password, # update_password 임포트 추가
     generate_temporary_password, # generate_temporary_password 임포트 추가
@@ -47,7 +37,6 @@ from core.models import User
 from core.config import settings, get_db
 from core.models import User
 from datetime import datetime, timedelta # datetime, timedelta 임포트 추가
->>>>>>> upstream/main
 
 router = APIRouter()
 
@@ -111,8 +100,6 @@ async def register(user_data: UserCreateSchema, db: AsyncSession = Depends(get_d
         student_id=new_user.user_detail.student_id if new_user.user_detail else None,
         major=new_user.user_detail.major if new_user.user_detail else None
     )
-<<<<<<< HEAD
-=======
 
 @router.patch("/change-password", summary="비밀번호 변경")
 async def change_password(
@@ -127,7 +114,6 @@ async def change_password(
     
     await update_password(db, current_user, password_change.new_password)
     return {"message": "Password updated successfully"}
->>>>>>> upstream/main
 
 @router.post("/login", summary="로그인", response_model=Token)
 async def login(user_login: UserLoginSchema, db: AsyncSession = Depends(get_db)):
@@ -237,8 +223,6 @@ async def read_users_me(
         student_id=user.user_detail.student_id if user.user_detail else None,
         major=user.user_detail.major if user.user_detail else None
     )
-<<<<<<< HEAD
-=======
 
 @router.post("/request-password-reset", summary="비밀번호 재설정 요청 (본인 확인 코드 전송)")
 async def request_password_reset(
@@ -296,4 +280,3 @@ async def verify_password_reset_code(
         )
 
     return {"message": "Verification successful. Temporary password sent to your email."}
->>>>>>> upstream/main
