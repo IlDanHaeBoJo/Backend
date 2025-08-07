@@ -16,6 +16,7 @@ except ImportError:
 from services.llm_service import LLMService
 from services.tts_service import TTSService
 from services.vector_service import VectorService
+from services.evaluation_service import EvaluationService
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +28,7 @@ class ServiceManager:
         self.speech_config = None
         self.llm_service = None
         self.tts_service = None
+        self.evaluation_service = None
         self.vector_service = None
         self._initialized = False
     
@@ -87,6 +89,19 @@ class ServiceManager:
         # TTS 서비스 초기화
         self.tts_service = TTSService()
         logger.info("✅ TTS 서비스 초기화 완료")
+
+        # Evaluation 서비스 초기화
+        self.evaluation_service = EvaluationService()
+        logger.info("✅ Evaluation 서비스 초기화 완료")
+        
+        # 감정 분석 모델 로드
+        try:
+            await self.evaluation_service.load_emotion_model()
+            logger.info("✅ 감정 분석 모델 로드 완료")
+        except Exception as e:
+            logger.warning(f"⚠️  감정 분석 모델 로드 실패: {e}")
+            logger.info("💡 평가 기능은 텍스트 분석만 수행됩니다")
+
         
         # 벡터 서비스 초기화 (SQLite 이슈 처리)
         try:

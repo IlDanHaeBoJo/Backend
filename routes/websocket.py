@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Dict, Any
 import wave
 import numpy as np
+from datetime import datetime
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from google.cloud import speech
@@ -24,6 +25,8 @@ class AudioProcessor:
     def __init__(self):
         # 사용자별 세션 관리
         self.user_sessions: Dict[str, Dict] = {}
+        # 평가 세션 ID 관리
+        self.user_evaluation_sessions: Dict[str, str] = {}  # user_id -> session_id
     
     def get_user_session(self, user_id: str) -> Dict[str, Any]:
         """사용자 세션 가져오기 또는 생성"""
@@ -37,6 +40,9 @@ class AudioProcessor:
                 "is_processing": False,  # STT 처리 중 플래그
                 "should_cancel": False,  # 처리 취소 플래그
                 "conversation_ended": False,  # 대화 종료 플래그
+                # "conversation_log": [],  # 대화 로그 저장
+                "scenario_id": None,  # 선택된 시나리오
+                "session_start_time": None,  # 세션 시작 시간
             }
         return self.user_sessions[user_id]
     
@@ -44,6 +50,8 @@ class AudioProcessor:
         """사용자 세션 정리"""
         if user_id in self.user_sessions:
             del self.user_sessions[user_id]
+        if user_id in self.user_evaluation_sessions:
+            del self.user_evaluation_sessions[user_id]
     
     async def detect_voice_activity(self, audio_chunk: bytes) -> bool:
         """음성 활동 감지 (VAD)"""
@@ -108,9 +116,10 @@ class AudioProcessor:
                 return
             
             # 임시 WAV 파일 생성
-            timestamp = int(asyncio.get_event_loop().time())
+            timestamp = int(asyncio.get_event_loop().time()) # ??
+
             # 사용자별 하위 디렉터리 생성 (세션별)
-            user_audio_dir = settings.TEMP_AUDIO_DIR / str(user_id) / settings.RUN_ID
+            user_audio_dir = settings.TEMP_AUDIO_DIR / str(user_id) / settings.RUN_ID # "temp_audio/user_id/run_id(250807_151053)"
             user_audio_dir.mkdir(parents=True, exist_ok=True)
             temp_path = user_audio_dir / f"stream_{timestamp}.wav"
             
@@ -137,8 +146,16 @@ class AudioProcessor:
             if user_text:
                 logger.info(f"[{user_id}] STT 결과: {user_text}")
                 
-                # AI 응답 생성
-                response_data = await self._generate_ai_response(user_id, user_text)
+                # 평가 서비스에 사용자(환자) 대화 엔트리 백그라운드 추가 (비동기)
+                if user_id in self.user_evaluation_sessions:
+                    session_id = self.user_evaluation_sessions[user_id]
+                    # 백그라운드에서 실행 - STT→LLM→TTS 흐름을 차단하지 않음
+                    asyncio.create_task(self._add_user_conversation_entry_async(
+                        session_id, str(temp_path), user_text, user_id
+                    ))
+                
+                # AI 응답 생성 (음성 파일 경로 포함)
+                response_data = await self._generate_ai_response(user_id, user_text, str(temp_path))
                 
                 # 취소 확인 (마지막 체크)
                 if session["should_cancel"]:
@@ -163,9 +180,10 @@ class AudioProcessor:
                         "avatar_action": "listening"
                     }, ensure_ascii=False))
             
-            # 임시 파일 정리
-            if temp_path.exists():
-                temp_path.unlink()
+            # 임시 파일 정리 - 평가 서비스에서 관리하므로 여기서는 삭제하지 않음
+            # 평가 완료 시 _cleanup_audio_files()에서 일괄 삭제
+            # if temp_path.exists():
+            #     temp_path.unlink()
                 
         except Exception as e:
             logger.error(f"발화 처리 오류: {e}")
@@ -221,9 +239,97 @@ class AudioProcessor:
         
         return text
     
-    async def _generate_ai_response(self, user_id: str, user_text: str) -> Dict[str, Any]:
+    async def _perform_automatic_evaluation(self, user_id: str, session: Dict) -> Dict:
+        """대화 종료 시 자동 CPX 평가 실행"""
+        try:
+            print(f"🎯 [{user_id}] CPX 자동 평가 시작")
+            
+            # 평가에 필요한 정보 수집
+            conversation_log = session.get("conversation_log", [])
+            scenario_id = session.get("scenario_id", "unknown")
+            
+            if not conversation_log:
+                print(f"⚠️ [{user_id}] 대화 로그가 비어있음")
+                return {
+                    "error": "대화 내용이 없어 평가할 수 없습니다.",
+                    "scores": {"total_score": 0}
+                }
+            
+            # 대화 로그를 평가 서비스에 맞는 형식으로 변환
+            formatted_conversation = []
+            for entry in conversation_log:
+                formatted_conversation.extend([
+                    {
+                        "type": "student",
+                        "content": entry.get("student_input", ""),
+                        "timestamp": entry.get("timestamp", "")
+                    },
+                    {
+                        "type": "patient", 
+                        "content": entry.get("patient_response", ""),
+                        "timestamp": entry.get("timestamp", "")
+                    }
+                ])
+            
+            print(f"📋 [{user_id}] 평가 데이터: {len(formatted_conversation)}개 메시지, 시나리오: {scenario_id}")
+            
+            # 기존 평가 세션 ID 확인 (이미 실시간으로 데이터가 수집되고 있음)
+            if user_id in audio_processor.user_evaluation_sessions:
+                session_id = audio_processor.user_evaluation_sessions[user_id]
+                print(f"🎯 [{user_id}] 기존 평가 세션 사용: {session_id}")
+                
+                # 평가 세션 종료 및 종합 평가 수행 (실시간 수집된 데이터 사용)
+                evaluation_result = await service_manager.evaluation_service.end_evaluation_session(session_id)
+                
+            else:
+                # 백업: 평가 세션이 없으면 새로 생성 (기존 방식)
+                print(f"⚠️ [{user_id}] 기존 평가 세션이 없어 새로 생성합니다")
+                session_id = await service_manager.evaluation_service.start_evaluation_session(
+                    user_id=user_id,
+                    scenario_id=scenario_id
+                )
+                
+                # 대화 로그를 인터랙션으로 변환하여 추가
+                for i in range(0, len(formatted_conversation), 2):
+                    if i + 1 < len(formatted_conversation):
+                        student_msg = formatted_conversation[i]
+                        patient_msg = formatted_conversation[i + 1]
+                        
+                        await service_manager.evaluation_service.add_interaction(
+                            session_id=session_id,
+                            student_question=student_msg.get("content", ""),
+                            patient_response=patient_msg.get("content", ""),
+                            audio_file_path=None
+                        )
+                
+                # 평가 세션 종료 및 종합 평가 수행
+                evaluation_result = await service_manager.evaluation_service.end_evaluation_session(session_id)
+            
+            print(f"✅ [{user_id}] 평가 완료 - 총점: {evaluation_result.get('scores', {}).get('total_score', 0)}")
+            
+            # 평가 세션 정리
+            if user_id in audio_processor.user_evaluation_sessions:
+                del audio_processor.user_evaluation_sessions[user_id]
+                print(f"🧹 [{user_id}] 평가 세션 정리 완료")
+            
+            # 평가 결과를 데이터베이스에 저장 (향후 구현)
+            # await self._save_evaluation_to_database(user_id, evaluation_result)
+            
+            return evaluation_result
+            
+        except Exception as e:
+            print(f"❌ [{user_id}] 자동 평가 오류: {e}")
+            return {
+                "error": f"평가 중 오류가 발생했습니다: {str(e)}",
+                "scores": {"total_score": 0}
+            }
+    
+    async def _generate_ai_response(self, user_id: str, user_text: str, audio_file_path: str = None) -> Dict[str, Any]:
         """AI 응답 생성 (시나리오 기반)"""
         try:
+            # 세션 정보 가져오기
+            session = self.get_user_session(user_id)
+            
             # 입력 로깅
             print(f"\n🎤 사용자 입력: '{user_text}'")
             
@@ -235,8 +341,42 @@ class AudioProcessor:
             # 출력 로깅
             print(f"🤖 AI 응답: '{response_text}'")
             
+            # 대화 로그에 저장
+            # conversation_entry = {
+            #     "timestamp": datetime.now().isoformat(),
+            #     "student_input": user_text,
+            #     "patient_response": response_text,
+            #     "type": "interaction"
+            # }
+            # session["conversation_log"].append(conversation_entry)
+            
             # TTS 생성
             audio_path = await service_manager.tts_service.generate_speech(response_text)
+            
+            if not conversation_ended:
+                # 평가 서비스에 AI(의사) 응답 데이터 백그라운드 추가 (사용자 데이터는 이미 STT 처리 시 추가됨)
+                if user_id in audio_processor.user_evaluation_sessions:
+                    session_id = audio_processor.user_evaluation_sessions[user_id]
+                    
+                    # AI(의사) 응답 데이터 백그라운드 추가 (TTS 음성 생성 후)
+                    if audio_path:
+                        asyncio.create_task(self._add_ai_conversation_entry_async(
+                            session_id, audio_path, response_text, user_id
+                        ))
+                    
+                    # 기존 방식 호환성 유지 (백그라운드)
+                    asyncio.create_task(self._record_interaction_async(
+                        session_id, user_text, response_text, audio_file_path, user_id
+                    ))
+            else:
+                # 대화 종료 시: 순차적으로 처리하여 데이터 완성 보장
+                if user_id in audio_processor.user_evaluation_sessions:
+                    session_id = audio_processor.user_evaluation_sessions[user_id]
+                    
+                    if audio_path:
+                        task = asyncio.create_task(self._add_ai_conversation_entry_async(
+                            session_id, audio_path, response_text, user_id
+                        ))
             
             # 응답 데이터 구성
             response_data = {
@@ -253,8 +393,31 @@ class AudioProcessor:
             if conversation_ended:
                 response_data["type"] = "conversation_ended"
                 response_data["avatar_action"] = "goodbye"
-                response_data["message"] = "진료가 완료되었습니다. 세션이 곧 종료됩니다."
-                print(f"🏁 [{user_id}] 대화 종료 - 음성 처리를 중단합니다")
+                response_data["message"] = "진료가 완료되었습니다. 평가 결과는 곧 저장됩니다."
+                print(f"🏁 [{user_id}] 대화 종료 - WebSocket 응답 후 백그라운드 평가 시작")
+                
+                # 평가에 필요한 정보 미리 보존 (WebSocket 연결 종료 대비)
+                evaluation_context = {
+                    "session_id": audio_processor.user_evaluation_sessions.get(user_id),
+                    "user_id": user_id,
+                    "scenario_id": session.get("scenario_id"),
+                    "audio_file_path": audio_file_path
+                }
+                
+                # 진행 중인 백그라운드 작업들 완료 후 평가 실행
+                background_tasks = []
+                
+                # AI 대화 엔트리 추가 task 추가
+                if audio_path:
+                    background_tasks.append(task)
+                
+                # 진행 중인 모든 백그라운드 작업 완료 대기
+                if background_tasks:
+                    await asyncio.gather(*background_tasks)
+                    print(f"✅ [{user_id}] 모든 백그라운드 작업 완료")
+                
+                # 평가 실행
+                asyncio.create_task(self._background_evaluation_workflow(evaluation_context))
             
             return response_data
             
@@ -266,6 +429,116 @@ class AudioProcessor:
                 "avatar_action": "error",
                 "conversation_ended": False
             }
+    
+    async def _perform_automatic_evaluation(self, user_id: str, session: Dict) -> Dict[str, Any]:
+        """대화 종료 시 자동 평가 수행"""
+        try:
+            # 평가 세션 ID 가져오기
+            if user_id not in self.user_evaluation_sessions:
+                raise Exception("평가 세션을 찾을 수 없습니다.")
+                
+            session_id = self.user_evaluation_sessions[user_id]
+            print(f"🔍 [{user_id}] 자동 평가 시작 - 세션: {session_id}")
+            
+            # 평가 서비스를 통해 세션 종료 및 종합 평가 수행
+            evaluation_result = await service_manager.evaluation_service.end_evaluation_session(session_id)
+            
+            if "error" in evaluation_result:
+                raise Exception(f"평가 수행 중 오류: {evaluation_result['error']}")
+            
+            print(f"✅ [{user_id}] 자동 평가 완료")
+            return evaluation_result
+            
+        except Exception as e:
+            logger.error(f"자동 평가 오류: {e}")
+            return {
+                "error": str(e),
+                "scores": {"total_score": 0},
+                "message": "평가 중 오류가 발생했습니다."
+            }
+    
+    async def _add_user_conversation_entry_async(self, session_id: str, audio_file_path: str, 
+                                               text: str, user_id: str):
+        """사용자 대화 엔트리를 백그라운드에서 비동기로 추가"""
+        try:
+            await service_manager.evaluation_service.add_conversation_entry(
+                session_id=session_id,
+                audio_file_path=audio_file_path,
+                text=text,
+                speaker_role="user"  # 환자(사용자) 발화
+            )
+            logger.info(f"[{user_id}] 사용자 대화 엔트리 백그라운드 추가 완료")
+        except Exception as e:
+            logger.error(f"[{user_id}] 사용자 대화 엔트리 백그라운드 추가 실패: {e}")
+    
+    async def _add_ai_conversation_entry_async(self, session_id: str, audio_file_path: str, 
+                                             text: str, user_id: str):
+        """AI 대화 엔트리를 백그라운드에서 비동기로 추가"""
+        try:
+            await service_manager.evaluation_service.add_conversation_entry(
+                session_id=session_id,
+                audio_file_path=audio_file_path,
+                text=text,
+                speaker_role="assistant"  # 의사(AI) 응답
+            )
+            logger.info(f"[{user_id}] AI 대화 엔트리 백그라운드 추가 완료")
+        except Exception as e:
+            logger.error(f"[{user_id}] AI 대화 엔트리 백그라운드 추가 실패: {e}")
+    
+    async def _record_interaction_async(self, session_id: str, user_text: str, 
+                                      response_text: str, audio_file_path: str, user_id: str):
+        """인터랙션을 백그라운드에서 비동기로 기록"""
+        try:
+            await service_manager.evaluation_service.record_interaction(
+                session_id, user_text, response_text, audio_file_path
+            )
+            logger.info(f"[{user_id}] 인터랙션 백그라운드 기록 완료")
+        except Exception as e:
+            logger.error(f"[{user_id}] 인터랙션 백그라운드 기록 실패: {e}")
+    
+    async def _background_evaluation_workflow(self, context: Dict):
+        """백그라운드에서 평가 워크플로우 실행 (WebSocket 독립적)"""
+        user_id = context["user_id"]
+        session_id = context["session_id"]
+        
+        try:
+            print(f"🔄 [{user_id}] 백그라운드 평가 워크플로우 시작 - 세션: {session_id}")
+            
+            # 평가 실행 (모든 대화 데이터가 이미 완료된 상태)
+            evaluation_result = await service_manager.evaluation_service.end_evaluation_session(session_id)
+            
+            if "error" in evaluation_result:
+                raise Exception(f"평가 오류: {evaluation_result['error']}")
+            
+            print(f"✅ [{user_id}] 백그라운드 평가 완료 - 총점: {evaluation_result.get('scores', {}).get('total_score', 0)}")
+            
+            # DB에 평가 결과 저장 (향후 구현)
+            await self._save_evaluation_to_database(user_id, evaluation_result)
+            
+            # 평가 완료 후 세션 정리
+            if user_id in audio_processor.user_evaluation_sessions:
+                del audio_processor.user_evaluation_sessions[user_id]
+                print(f"🧹 [{user_id}] 평가 세션 정리 완료")
+            
+            print(f"🎉 [{user_id}] 백그라운드 평가 워크플로우 완료 - DB 저장 성공")
+            
+        except Exception as e:
+            print(f"❌ [{user_id}] 백그라운드 평가 워크플로우 오류: {e}")
+            logger.error(f"백그라운드 평가 워크플로우 실패 [{user_id}]: {e}")
+    
+    async def _save_evaluation_to_database(self, user_id: str, evaluation_result: Dict):
+        """평가 결과를 데이터베이스에 저장 (향후 구현)"""
+        try:
+            # TODO: 실제 DB 저장 로직 구현
+            # 예시:
+            # async with get_db_session() as db:
+            #     await db.save_evaluation_result(user_id, evaluation_result)
+            print(f"💾 [{user_id}] DB 저장 시뮬레이션 완료")
+            # 실제로는 여기서 데이터베이스에 저장
+            
+        except Exception as e:
+            print(f"❌ [{user_id}] DB 저장 오류: {e}")
+            logger.error(f"DB 저장 실패 [{user_id}]: {e}")
 
 # 오디오 프로세서 인스턴스
 audio_processor = AudioProcessor()
@@ -283,12 +556,32 @@ async def websocket_endpoint(websocket: WebSocket, user_id: str):
         # 시나리오 선택 메시지 전송
         scenarios = service_manager.llm_service.get_available_scenarios()
         scenario_options = "\n".join([f"{k}. {v}" for k, v in scenarios.items()])
+        # 기본 시나리오(치매) 설정 및 평가 세션 시작
+        default_scenario_id = "3"  # 치매 시나리오
+        session["scenario_id"] = default_scenario_id
+        session["session_start_time"] = datetime.now().isoformat()
         
+        # LLM 서비스에 시나리오 설정
+        service_manager.llm_service.select_scenario(default_scenario_id, user_id)
+        
+        # 평가 세션 시작
+        eval_session_id = await service_manager.evaluation_service.start_evaluation_session(
+            user_id, default_scenario_id
+        )
+        audio_processor.user_evaluation_sessions[user_id] = eval_session_id
+        
+        print(f"🎭 [{user_id}] 기본 시나리오({default_scenario_id}) 설정 및 평가 세션 시작: {eval_session_id}")
+        
+        # 시작 메시지 전송
         await websocket.send_text(json.dumps({
-            "type": "scenario_selection",
-            "message": f"🏥 CPX 시스템에 연결되었습니다! ({user_id})\n\n📋 시나리오를 선택해주세요:\n{scenario_options}\n\n번호를 입력하고 음성으로 '시작'이라고 말씀해주세요.",
-            "scenarios": scenarios,
-            "avatar_action": "idle"
+            # "type": "scenario_selection",
+            # "message": f"🏥 CPX 시스템에 연결되었습니다! ({user_id})\n\n📋 시나리오를 선택해주세요:\n{scenario_options}\n\n번호를 입력하고 음성으로 '시작'이라고 말씀해주세요.",
+            # "scenarios": scenarios,
+            # "avatar_action": "idle"
+            "type": "session_started",
+            "message": f"🏥 CPX 시스템에 연결되었습니다! ({user_id})\n\n치매 환자 시나리오가 설정되었습니다.\n지금부터 환자에게 말을 걸어보세요.",
+            "scenario_id": default_scenario_id,
+            "avatar_action": "ready"
         }, ensure_ascii=False))
         
         while True:
@@ -300,21 +593,24 @@ async def websocket_endpoint(websocket: WebSocket, user_id: str):
                     # 음성 청크 처리
                     await handle_audio_chunk(websocket, user_id, message["bytes"], session)
                     
-                elif "text" in message:
-                    # 텍스트 명령 처리
-                    command = json.loads(message["text"])
-                    await handle_command(websocket, user_id, command)
-                    
     except WebSocketDisconnect:
         logger.info(f"🔌 연결 해제: {user_id}")
     except Exception as e:
         logger.error(f"WebSocket 오류: {e}")
     finally:
-        # 세션 정리 (WebSocket 연결 해제 시)
-        audio_processor.clear_user_session(user_id)
+        # 평가 세션 보호: 평가 진행 중이면 정리 연기
+        if user_id in audio_processor.user_evaluation_sessions:
+            session_id = audio_processor.user_evaluation_sessions[user_id]
+            print(f"⚠️ [{user_id}] 평가 세션 보호 - 백그라운드 평가 완료까지 대기: {session_id}")
+            # 평가 세션은 백그라운드에서 정리하도록 함
+        
+        # WebSocket 세션만 정리 (평가 세션은 보존)
+        if user_id in audio_processor.user_sessions:
+            del audio_processor.user_sessions[user_id]
+        
         # LLM 서비스의 사용자 상태도 정리 (메모리 절약)
         service_manager.llm_service.clear_user_memory(user_id)
-        logger.info(f"🧹 [{user_id}] 모든 사용자 상태 정리 완료")
+        logger.info(f"🧹 [{user_id}] WebSocket 세션 정리 완료 (평가 세션 보존)")
 
 async def handle_audio_chunk(websocket: WebSocket, user_id: str, audio_chunk: bytes, session: Dict):
     """음성 청크 처리"""
@@ -385,98 +681,4 @@ async def handle_audio_chunk(websocket: WebSocket, user_id: str, audio_chunk: by
     except Exception as e:
         logger.error(f"오디오 청크 처리 오류: {e}")
 
-async def handle_command(websocket: WebSocket, user_id: str, command: Dict):
-    """클라이언트 명령 처리"""
-    cmd_type = command.get("type", "")
-    
-    if cmd_type == "select_scenario":
-        scenario_id = command.get("scenario_id", "")
-        logger.info(f"[{user_id}] 🎭 시나리오 선택: {scenario_id}")
-        
-        # LLM 서비스에 사용자별 시나리오 설정  
-        success = service_manager.llm_service.select_scenario(scenario_id, user_id)
-        
-        if success:
-            scenario_name = service_manager.llm_service.scenarios[scenario_id]["name"]
-            response = {
-                "type": "scenario_selected",
-                "scenario_id": scenario_id,
-                "scenario_name": scenario_name,
-                "message": f"✅ {scenario_name} 선택됨!\n\n이제 환자에게 말을 걸어보세요.",
-                "avatar_action": "ready"
-            }
-        else:
-            response = {
-                "type": "error",
-                "message": f"❌ 잘못된 시나리오 번호입니다: {scenario_id}",
-                "avatar_action": "error"
-            }
-        
-        await websocket.send_text(json.dumps(response, ensure_ascii=False))
-        
-    elif cmd_type == "start_session":
-        case_id = command.get("case_id", "IM_001")
-        logger.info(f"[{user_id}] 🏥 CPX 세션 시작: {case_id}")
-        
-        response = {
-            "type": "session_started",
-            "case_id": case_id,
-            "message": "CPX 세션이 시작되었습니다. 환자에게 말을 걸어보세요.",
-            "avatar_action": "ready"
-        }
-        await websocket.send_text(json.dumps(response, ensure_ascii=False))
-        
-    elif cmd_type == "end_session":
-        logger.info(f"[{user_id}] 🏁 CPX 세션 종료")
-        
-        response = {
-            "type": "session_ended",
-            "message": "CPX 세션이 종료되었습니다. 수고하셨습니다.",
-            "avatar_action": "goodbye"
-        }
-        await websocket.send_text(json.dumps(response, ensure_ascii=False))
-        
-    elif cmd_type == "text_input":
-        # 텍스트 직접 입력 (STT 우회용)
-        text_input = command.get("text", "")
-        logger.info(f"[{user_id}] 📝 텍스트 직접 입력: '{text_input}'")
-        
-        if not text_input.strip():
-            await websocket.send_text(json.dumps({
-                "type": "error",
-                "message": "입력 텍스트가 비어있습니다.",
-                "avatar_action": "error"
-            }, ensure_ascii=False))
-            return
-        
-        # 세션 가져오기
-        session = audio_processor.get_user_session(user_id)
-        
-        # 대화 종료 확인
-        if session.get("conversation_ended", False):
-            logger.info(f"🔒 [{user_id}] 대화 종료됨 - 텍스트 입력 차단")
-            await websocket.send_text(json.dumps({
-                "type": "conversation_ended",
-                "message": "대화가 이미 종료되었습니다.",
-                "avatar_action": "goodbye"
-            }, ensure_ascii=False))
-            return
-        
-        # AI 응답 생성 (음성 처리와 동일한 로직)
-        response_data = await audio_processor._generate_ai_response(user_id, text_input)
-        
-        # 대화 종료 확인 및 세션에 플래그 설정
-        if response_data.get("conversation_ended", False):
-            session["conversation_ended"] = True
-            logger.info(f"🏁 [{user_id}] 텍스트 입력으로 대화 종료 감지")
-        
-        # 응답 전송
-        await websocket.send_text(json.dumps(response_data, ensure_ascii=False))
-        
-    elif cmd_type == "ping":
-        # 연결 상태 확인
-        await websocket.send_text(json.dumps({
-            "type": "pong",
-            "message": "연결 상태 양호",
-            "timestamp": asyncio.get_event_loop().time()
-        }, ensure_ascii=False)) 
+ 
