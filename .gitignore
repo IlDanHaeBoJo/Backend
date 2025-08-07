@@ -111,8 +111,8 @@ temp/
 *.backup 
 
 
-
-/config# 대용량 파일 제외
+# 대용량 파일 제외
+/config
 *.safetensors
 *.bin
 *.pth

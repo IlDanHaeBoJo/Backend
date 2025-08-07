@@ -8,12 +8,11 @@ from core.config import settings
 
 
 class SpeechProcessingService:
-    def __init__(self, whisper_model, llm_service, tts_service, evaluation_service):
+    def __init__(self, whisper_model, llm_service, tts_service):
         """음성 처리 서비스 초기화"""
         self.whisper_model = whisper_model
         self.llm_service = llm_service
         self.tts_service = tts_service
-        self.evaluation_service = evaluation_service
         self.user_buffers = {}
 
         # temp_audio 디렉토리 생성
@@ -99,8 +98,7 @@ class SpeechProcessingService:
         # 3. TTS 생성
         audio_path = await self.tts_service.generate_speech(ai_response)
 
-        # 4. 평가 기록
-        await self.evaluation_service.record_interaction(user_id, user_text, ai_response)
+        # 4. 평가 기록 (현재는 WebSocket에서 처리됨)
 
         # 5. 버퍼 초기화
         buffer["audio"].clear()

@@ -6,6 +6,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload # selectinload 임포트 추가
 from passlib.context import CryptContext
+import secrets # secrets 모듈 임포트
+import string # string 모듈 임포트
+from fastapi_mail import FastMail, MessageSchema, ConnectionConfig # FastAPI-Mail 임포트
 
 from core.config import settings
 from core.models import User, UserDetails # UserDetails 모델 임포트
@@ -15,6 +18,19 @@ from pydantic import BaseModel # Pydantic BaseModel 임포트
 refresh_tokens_db: Dict[str, Dict[str, str]] = {} # {refresh_token_id: {"username": "user", "expires": "datetime"}}
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+conf = ConnectionConfig(
+    MAIL_USERNAME=settings.MAIL_USERNAME,
+    MAIL_PASSWORD=settings.MAIL_PASSWORD,
+    MAIL_FROM=settings.MAIL_FROM,
+    MAIL_PORT=settings.MAIL_PORT,
+    MAIL_SERVER=settings.MAIL_SERVER,
+    MAIL_FROM_NAME=settings.MAIL_FROM_NAME,
+    MAIL_STARTTLS=settings.MAIL_STARTTLS, # MAIL_TLS 대신 MAIL_STARTTLS 사용
+    MAIL_SSL_TLS=settings.MAIL_SSL_TLS, # MAIL_SSL 대신 MAIL_SSL_TLS 사용
+    USE_CREDENTIALS=settings.USE_CREDENTIALS,
+    VALIDATE_CERTS=settings.VALIDATE_CERTS
+)
 
 class UserCreateSchema(BaseModel):
     username: str
@@ -33,6 +49,18 @@ class UserDeleteSchema(BaseModel):
     username: str
     password: str
 
+class PasswordChangeSchema(BaseModel):
+    current_password: str
+    new_password: str
+
+class ForgotPasswordRequestSchema(BaseModel):
+    username: str
+    email: str
+
+class VerifyCodeRequestSchema(BaseModel):
+    email: str
+    code: str
+
 class UserResponseSchema(BaseModel):
     id: int
     username: str
@@ -44,6 +72,9 @@ class UserResponseSchema(BaseModel):
 
     class Config:
         from_attributes = True # Pydantic v2에서 orm_mode 대신 사용
+
+# In-memory storage for verification codes: {email: {"code": "...", "expires": datetime}}
+verification_codes_db: Dict[str, Dict[str, str]] = {}
 
 def hash_password(password: str) -> str:
     """Hashes a password using bcrypt."""
@@ -170,3 +201,79 @@ async def get_user_by_username(db: AsyncSession, username: str) -> Optional[User
     )
     print("result:",result)
     return result.scalar_one_or_none()
+
+async def get_user_by_email(db: AsyncSession, email: str) -> Optional[User]:
+    """Retrieves a user by email from the database, eagerly loading user_detail."""
+    result = await db.execute(
+        select(User)
+        .options(selectinload(User.user_detail))
+        .join(UserDetails) # UserDetails와 조인
+        .where(UserDetails.email == email)
+    )
+    return result.scalar_one_or_none()
+
+async def update_password(db: AsyncSession, user: User, new_password: str) -> User:
+    """Updates a user's password."""
+    user.hashed_password = hash_password(new_password)
+    await db.commit()
+    await db.refresh(user)
+    return user
+
+def generate_verification_code() -> str:
+    """Generates a 6-digit numeric verification code."""
+    code = ''.join(secrets.choice(string.digits) for _ in range(6))
+    return code
+
+async def send_verification_email(email: str, code: str):
+    """
+    Sends the verification code to the user's email.
+    NOTE: This is a placeholder function. Actual email sending logic (e.g., using SMTP)
+    needs to be implemented here.
+    """
+    message = MessageSchema(
+        subject="비밀번호 재설정 본인 확인 코드",
+        recipients=[email],
+        body=f"귀하의 본인 확인 코드는 다음과 같습니다: {code}\n이 코드는 {settings.VERIFICATION_CODE_EXPIRE_MINUTES}분 동안 유효합니다.",
+        subtype="plain"
+    )
+    fm = FastMail(conf)
+    try:
+        await fm.send_message(message)
+        print(f"이메일 전송: {email}으로 본인 확인 코드 '{code}' 전송됨.")
+    except Exception as e:
+        print(f"이메일 전송 실패: {e}")
+        raise e # 예외를 다시 발생시켜 상위 호출자에게 알림
+
+def verify_code(email: str, code: str) -> bool:
+    """Verifies the provided code against the stored code for the given email."""
+    stored_data = verification_codes_db.get(email)
+    if stored_data and stored_data["code"] == code and datetime.utcnow() < stored_data["expires"]:
+        del verification_codes_db[email] # 사용된 코드는 삭제
+        return True
+    return False
+
+async def generate_temporary_password() -> str:
+    """Generates a temporary password."""
+    temp_password = secrets.token_urlsafe(12) # 12자리의 안전한 임시 비밀번호 생성
+    return temp_password
+
+async def send_temporary_password_email(email: str, temp_password: str):
+    """
+    Sends the temporary password to the user's email.
+    NOTE: This is a placeholder function. Actual email sending logic (e.g., using SMTP)
+    needs to be implemented here.
+    """
+    message = MessageSchema(
+        subject="임시 비밀번호 발급",
+        recipients=[email],
+        body=f"귀하의 임시 비밀번호는 다음과 같습니다: {temp_password}\n로그인 후 비밀번호를 변경해주세요.",
+        subtype="plain"
+    )
+    fm = FastMail(conf)
+    try:
+        await fm.send_message(message)
+        print(f"이메일 전송: {email}으로 임시 비밀번호 '{temp_password}' 전송됨.")
+    except Exception as e:
+        print(f"이메일 전송 실패: {e}")
+        # 실제 애플리케이션에서는 사용자에게 적절한 오류 메시지를 반환해야 합니다.
+        raise e # 예외를 다시 발생시켜 상위 호출자에게 알림

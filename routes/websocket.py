@@ -6,11 +6,13 @@ from pathlib import Path
 from typing import Dict, Any
 import wave
 import numpy as np
+from datetime import datetime
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from google.cloud import speech
 
 from core.startup import service_manager
+from services.langgraph_evaluation_service import LangGraphEvaluationService
 from core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -26,6 +28,8 @@ class AudioProcessor:
         self.user_sessions: Dict[str, Dict] = {}
         # 평가 세션 ID 관리
         self.user_evaluation_sessions: Dict[str, str] = {}  # user_id -> session_id
+        # CPX 평가 서비스 (LangGraph 버전)
+        self.cpx_evaluator = LangGraphEvaluationService()
     
     def get_user_session(self, user_id: str) -> Dict[str, Any]:
         """사용자 세션 가져오기 또는 생성"""
@@ -39,6 +43,9 @@ class AudioProcessor:
                 "is_processing": False,  # STT 처리 중 플래그
                 "should_cancel": False,  # 처리 취소 플래그
                 "conversation_ended": False,  # 대화 종료 플래그
+                "conversation_log": [],  # 대화 로그 저장
+                "scenario_id": None,  # 선택된 시나리오
+                "session_start_time": None,  # 세션 시작 시간
             }
         return self.user_sessions[user_id]
     
@@ -225,9 +232,67 @@ class AudioProcessor:
         
         return text
     
-    async def _generate_ai_response(self, user_id: str, user_text: str, audio_file_path: str = None) -> Dict[str, Any]:
+    async def _perform_automatic_evaluation(self, user_id: str, session: Dict) -> Dict:
+        """대화 종료 시 자동 CPX 평가 실행"""
+        try:
+            print(f"🎯 [{user_id}] CPX 자동 평가 시작")
+            
+            # 평가에 필요한 정보 수집
+            conversation_log = session.get("conversation_log", [])
+            scenario_id = session.get("scenario_id", "unknown")
+            
+            if not conversation_log:
+                print(f"⚠️ [{user_id}] 대화 로그가 비어있음")
+                return {
+                    "error": "대화 내용이 없어 평가할 수 없습니다.",
+                    "scores": {"total_score": 0}
+                }
+            
+            # 대화 로그를 평가 서비스에 맞는 형식으로 변환
+            formatted_conversation = []
+            for entry in conversation_log:
+                formatted_conversation.extend([
+                    {
+                        "type": "student",
+                        "content": entry.get("student_input", ""),
+                        "timestamp": entry.get("timestamp", "")
+                    },
+                    {
+                        "type": "patient", 
+                        "content": entry.get("patient_response", ""),
+                        "timestamp": entry.get("timestamp", "")
+                    }
+                ])
+            
+            print(f"📋 [{user_id}] 평가 데이터: {len(formatted_conversation)}개 메시지, 시나리오: {scenario_id}")
+            
+            # CPX 평가 실행
+            evaluation_result = await self.cpx_evaluator.evaluate_conversation(
+                user_id=user_id,
+                scenario_id=scenario_id,
+                conversation_log=formatted_conversation
+            )
+            
+            print(f"✅ [{user_id}] 평가 완료 - 총점: {evaluation_result.get('scores', {}).get('total_score', 0)}")
+            
+            # 평가 결과를 데이터베이스에 저장 (향후 구현)
+            # await self._save_evaluation_to_database(user_id, evaluation_result)
+            
+            return evaluation_result
+            
+        except Exception as e:
+            print(f"❌ [{user_id}] 자동 평가 오류: {e}")
+            return {
+                "error": f"평가 중 오류가 발생했습니다: {str(e)}",
+                "scores": {"total_score": 0}
+            }
+    
+    async def _generate_ai_response(self, user_id: str, user_text: str) -> Dict[str, Any]:
         """AI 응답 생성 (시나리오 기반)"""
         try:
+            # 세션 정보 가져오기
+            session = self.get_user_session(user_id)
+            
             # 입력 로깅
             print(f"\n🎤 사용자 입력: '{user_text}'")
             
@@ -238,6 +303,15 @@ class AudioProcessor:
             
             # 출력 로깅
             print(f"🤖 AI 응답: '{response_text}'")
+            
+            # 대화 로그에 저장
+            conversation_entry = {
+                "timestamp": datetime.now().isoformat(),
+                "student_input": user_text,
+                "patient_response": response_text,
+                "type": "interaction"
+            }
+            session["conversation_log"].append(conversation_entry)
             
             # TTS 생성
             audio_path = await service_manager.tts_service.generate_speech(response_text)
@@ -263,28 +337,21 @@ class AudioProcessor:
                 "conversation_ended": conversation_ended
             }
             
-            # 대화 종료 시 특별 처리
+            # 대화 종료 시 특별 처리 및 자동 평가
             if conversation_ended:
                 response_data["type"] = "conversation_ended"
                 response_data["avatar_action"] = "goodbye"
-                response_data["message"] = "진료가 완료되었습니다. 세션이 곧 종료됩니다."
-                print(f"🏁 [{user_id}] 대화 종료 - 음성 처리를 중단합니다")
+                response_data["message"] = "진료가 완료되었습니다. 평가를 진행하겠습니다."
+                print(f"🏁 [{user_id}] 대화 종료 - 자동 평가 시작")
                 
-                # 평가 세션 종료 및 결과 생성
-                if user_id in audio_processor.user_evaluation_sessions:
-                    session_id = audio_processor.user_evaluation_sessions[user_id]
-                    print(f"📊 [{user_id}] 평가 세션 종료 및 결과 생성 시작...")
-                    evaluation_result = await service_manager.evaluation_service.end_evaluation_session(
-                        session_id
-                    )
-                    response_data["evaluation_summary"] = {
-                        "session_id": session_id,
-                        "total_interactions": evaluation_result.get("total_interactions", 0),
-                        "duration": evaluation_result.get("duration_minutes", 0),
-                        "scores": evaluation_result.get("scores", {})
-                    }
-                    # 평가 세션 정리
-                    del audio_processor.user_evaluation_sessions[user_id]
+                # 자동 CPX 평가 실행
+                try:
+                    evaluation_result = await self._perform_automatic_evaluation(user_id, session)
+                    response_data["evaluation_result"] = evaluation_result
+                    response_data["message"] += f"\n\n📊 평가 완료! 총점: {evaluation_result.get('scores', {}).get('total_score', 0)}점"
+                except Exception as eval_error:
+                    print(f"❌ [{user_id}] 자동 평가 오류: {eval_error}")
+                    response_data["evaluation_error"] = str(eval_error)
             
             return response_data
             
@@ -427,6 +494,11 @@ async def handle_command(websocket: WebSocket, user_id: str, command: Dict):
         success = service_manager.llm_service.select_scenario(scenario_id, user_id)
         
         if success:
+            # 세션에 시나리오 정보 저장
+            session = audio_processor.get_user_session(user_id)
+            session["scenario_id"] = scenario_id
+            session["session_start_time"] = datetime.now().isoformat()
+            
             scenario_name = service_manager.llm_service.scenarios[scenario_id]["name"]
             
             # 평가 세션 시작
