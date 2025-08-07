@@ -14,7 +14,7 @@ class User(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
-    user_detail = relationship("UserDetails", back_populates="user", uselist=False)
+    user_detail = relationship("UserDetails", back_populates="user", uselist=False, cascade="all, delete-orphan")
     notices = relationship("Notices", back_populates="author")
     cpx_results = relationship("CpxResults", back_populates="student")
     cpx_evaluations_as_evaluator = relationship("CpxEvaluations", back_populates="evaluator")
