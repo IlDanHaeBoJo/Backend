@@ -5,7 +5,6 @@ from core.config import get_db # get_db 임포트
 from services.notice_service import Notice, NoticeCreate, NoticeUpdate, NoticeStats, NoticeService # NoticeService 임포트
 from services.admin_notice_service import ( # AdminNoticeService 함수들 임포트
     get_all_notices, get_notice_by_id, create_notice, update_notice, delete_notice,
-    get_high_priority_notices, update_notice_priority,
     get_notice_statistics, search_notices
 )
 from routes.auth import get_current_user
@@ -90,27 +89,28 @@ async def delete_notice_admin(
         )
     return {"message": "공지사항이 삭제되었습니다."}
 
-@router.get("/high-priority/", summary="높은 우선순위 공지사항 조회 (관리자용)", response_model=List[Notice])
+@router.get("/important/", summary="중요 공지사항 조회 (관리자용)", response_model=List[Notice])
 @require_role("admin")
-async def get_high_priority_notices_admin(
+async def get_important_notices_admin(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user) # User 객체로 변경
 ):
-    """관리자가 높은 우선순위 공지사항만 조회합니다."""
+    """관리자가 중요 공지사항만 조회합니다."""
     notice_service = NoticeService()
-    return await get_high_priority_notices(db, notice_service)
+    return await notice_service.get_important_notices(db)
 
-@router.put("/{notice_id}/priority", summary="공지사항 우선순위 업데이트 (관리자용)", response_model=Notice)
+@router.put("/{notice_id}/important", summary="공지사항 중요도 업데이트 (관리자용)", response_model=Notice)
 @require_role("admin")
-async def update_notice_priority_admin(
+async def update_notice_important_admin(
     notice_id: int,
-    priority: int = Query(..., ge=0, description="새로운 우선순위 값 (0 이상)"),
+    important: bool = Query(..., description="중요 여부 (True/False)"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user) # User 객체로 변경
 ):
-    """관리자가 공지사항의 우선순위를 업데이트합니다."""
+    """관리자가 공지사항의 중요도를 업데이트합니다."""
     notice_service = NoticeService()
-    updated_notice = await update_notice_priority(db, notice_id, priority, notice_service)
+    notice_update = NoticeUpdate(important=important)
+    updated_notice = await notice_service.update_notice(db, notice_id, notice_update)
     if not updated_notice:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

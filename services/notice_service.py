@@ -16,21 +16,21 @@ class NoticeBase(BaseModel):
     """공지사항 기본 모델"""
     title: str = Field(..., max_length=255, description="공지사항 제목")
     content: str = Field(..., description="공지사항 내용")
-    priority: int = Field(default=0, description="공지사항 중요도 (높을수록 상단 노출 등, 0이 기본)")
+    important: bool = Field(default=False, description="공지사항 중요 여부 (True면 중요 공지)")
     author_id: int = Field(..., description="작성자 ID")
 
 class NoticeCreate(BaseModel):
     """공지사항 생성 모델"""
     title: str = Field(..., max_length=255, description="공지사항 제목")
     content: str = Field(..., description="공지사항 내용")
-    priority: int = Field(default=0, description="공지사항 중요도 (높을수록 상단 노출 등, 0이 기본)")
+    important: bool = Field(default=False, description="공지사항 중요 여부 (True면 중요 공지)")
     author_id: Optional[int] = Field(None, description="작성자 ID (자동 설정됨)")
 
 class NoticeUpdate(BaseModel):
     """공지사항 수정 모델"""
     title: Optional[str] = Field(None, max_length=255, description="공지사항 제목")
     content: Optional[str] = Field(None, description="공지사항 내용")
-    priority: Optional[int] = Field(None, description="공지사항 중요도 (높을수록 상단 노출 등, 0이 기본)")
+    important: Optional[bool] = Field(None, description="공지사항 중요 여부 (True면 중요 공지)")
 
 class Notice(NoticeBase):
     """공지사항 응답 모델"""
@@ -50,7 +50,7 @@ class NoticeStats(BaseModel):
     """공지사항 통계 모델"""
     total_notices: int = Field(..., description="총 공지사항 수")
     total_views: int = Field(..., description="총 조회수")
-    high_priority_notice_count: int = Field(..., description="높은 우선순위 공지사항 수 (priority > 0)")
+    high_priority_notice_count: int = Field(..., description="중요 공지사항 수 (important = True)")
     recent_notices_count: int = Field(..., description="최근 7일 공지사항 수")
 
 class NoticeService:
@@ -96,7 +96,7 @@ class NoticeService:
             'notice_id': db_notice.notice_id,
             'title': db_notice.title,
             'content': db_notice.content,
-            'priority': db_notice.priority,
+            'important': db_notice.important,
             'author_id': db_notice.author_id,
             'view_count': db_notice.view_count,
             'created_at': db_notice.created_at,
@@ -145,9 +145,9 @@ class NoticeService:
         logger.info(f"공지사항 삭제: {db_notice.title}")
         return True
     
-    async def get_high_priority_notices(self, db: AsyncSession) -> List[Notice]:
-        """높은 우선순위 공지사항만 조회 (priority > 0)"""
-        stmt = select(DBNotice).options(selectinload(DBNotice.attachments)).filter(DBNotice.priority > 0).order_by(DBNotice.priority.desc(), DBNotice.created_at.desc())
+    async def get_important_notices(self, db: AsyncSession) -> List[Notice]:
+        """중요 공지사항만 조회 (important = True)"""
+        stmt = select(DBNotice).options(selectinload(DBNotice.attachments)).filter(DBNotice.important == True).order_by(DBNotice.created_at.desc())
         result = await db.execute(stmt)
         db_notices = result.scalars().all()
         
@@ -185,7 +185,7 @@ class NoticeService:
         
         total_notices = len(db_notices)
         total_views = sum(notice.view_count for notice in db_notices)
-        high_priority_notice_count = len([n for n in db_notices if n.priority > 0])
+        important_notice_count = len([n for n in db_notices if n.important == True])
         
         # 최근 7일 공지사항 수
         week_ago = datetime.now() - timedelta(days=7)
@@ -194,7 +194,7 @@ class NoticeService:
         return NoticeStats(
             total_notices=total_notices,
             total_views=total_views,
-            high_priority_notice_count=high_priority_notice_count,
+            high_priority_notice_count=important_notice_count,
             recent_notices_count=recent_notices_count
         )
     
