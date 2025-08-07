@@ -134,8 +134,7 @@ async def delete_user(db: AsyncSession, username: str) -> bool:
     result = await db.execute(select(User).where(User.username == username))
     user = result.scalar_one_or_none()
     if user:
-        # Delete associated user details
-        await db.execute(UserDetails.__table__.delete().where(UserDetails.user_id == user.id))
+        # Delete associated user details (cascade 옵션으로 자동 처리)
         
         # Delete associated refresh tokens (if any, though managed in-memory)
         tokens_to_delete = [
