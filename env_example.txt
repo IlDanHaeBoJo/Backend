@@ -1,0 +1,28 @@
+# Database Configuration
+DATABASE_URL=postgresql+asyncpg://username:password@localhost:5432/database_name
+
+# JWT Configuration
+SECRET_KEY=your-secret-key-here-change-this-in-production
+ALGORITHM=HS256
+ACCESS_TOKEN_EXPIRE_MINUTES=30
+
+# AWS S3 Configuration
+AWS_ACCESS_KEY_ID=your-aws-access-key-id
+AWS_SECRET_ACCESS_KEY=your-aws-secret-access-key
+AWS_REGION=ap-northeast-2
+S3_BUCKET_NAME=your-s3-bucket-name
+
+# OpenAI Configuration
+OPENAI_API_KEY=your-openai-api-key
+
+# Google Cloud Configuration
+GOOGLE_APPLICATION_CREDENTIALS=path/to/your/service-account-key.json
+
+# Server Configuration
+HOST=0.0.0.0
+PORT=8000
+DEBUG=true
+LOG_LEVEL=INFO
+
+# Frontend Origins (CORS)
+FRONTEND_ORIGINS=["http://localhost:3000", "http://localhost:3001"] 

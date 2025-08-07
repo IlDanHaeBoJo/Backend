@@ -1,0 +1,65 @@
+### 첨부파일 API 테스트
+
+# 1. 공지사항의 첨부파일 목록 조회
+GET http://localhost:8000/attachments/notice/1
+Authorization: Bearer {{auth_token}}
+
+###
+
+# 2. 특정 첨부파일 조회
+GET http://localhost:8000/attachments/1
+Authorization: Bearer {{auth_token}}
+
+###
+
+# 3. 첨부파일 정보 생성 (관리자만)
+POST http://localhost:8000/attachments/
+Authorization: Bearer {{admin_token}}
+Content-Type: application/json
+
+{
+  "notice_id": 1,
+  "original_filename": "test_document.pdf",
+  "stored_filename": "uuid-generated-filename.pdf",
+  "file_path": "notices/1/uuid-generated-filename.pdf",
+  "file_size": 1024000,
+  "file_type": "application/pdf"
+}
+
+###
+
+# 4. 첨부파일 정보 수정 (관리자만)
+PUT http://localhost:8000/attachments/1
+Authorization: Bearer {{admin_token}}
+Content-Type: application/json
+
+{
+  "original_filename": "updated_document.pdf",
+  "file_size": 2048000
+}
+
+###
+
+# 5. 첨부파일 정보 삭제 (관리자만)
+DELETE http://localhost:8000/attachments/1
+Authorization: Bearer {{admin_token}}
+
+###
+
+# 6. 공지사항의 모든 첨부파일 정보 삭제 (관리자만)
+DELETE http://localhost:8000/attachments/notice/1/all
+Authorization: Bearer {{admin_token}}
+
+###
+
+# 7. 공지사항 조회 (첨부파일 포함)
+GET http://localhost:8000/admin/notices/1
+Authorization: Bearer {{admin_token}}
+
+###
+
+# 8. 모든 공지사항 조회 (첨부파일 포함)
+GET http://localhost:8000/admin/notices/
+Authorization: Bearer {{admin_token}}
+
+### 
