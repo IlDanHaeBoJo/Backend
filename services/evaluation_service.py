@@ -80,11 +80,69 @@ class EvaluationService:
             "user_id": user_id,
             "scenario_id": scenario_id,
             "start_time": datetime.now(),
-            "interactions": [],
+            "interactions": [],  # 기존 방식 호환성 유지
+            "conversation_entries": [],  # 새로운 실시간 대화 데이터
+            # "audio_files": [],  # 임시 저장된 wav 파일 경로들
             "status": "active"
         }
         
         return session_id
+
+    async def add_conversation_entry(self, session_id: str, audio_file_path: str, 
+                                   text: str, speaker_role: str) -> Dict:
+        """실시간 대화 엔트리 추가 (음성 분석 포함)"""
+        if session_id not in self.session_data:
+            return {"error": "세션을 찾을 수 없습니다"}
+        
+        try:
+            timestamp = datetime.now()
+            emotion_analysis = None
+            
+            # 의사(assistant) 음성인 경우에만 감정 분석 수행
+            if speaker_role == "assistant":
+                await self.load_emotion_model()  # 모델이 로드되지 않았다면 로드
+                
+                if self.emotion_model is not None:
+                    emotion_result = await self.analyze_single_audio(audio_file_path)
+                    if "error" not in emotion_result:
+                        emotion_analysis = {
+                            "predicted_emotion": emotion_result["predicted_emotion"],
+                            "confidence": emotion_result["confidence"],
+                            "emotion_scores": emotion_result["emotion_scores"]
+                        }
+                        print(f"🎭 [{session_id}] 감정 분석 완료: {emotion_analysis['predicted_emotion']} ({emotion_analysis['confidence']:.2f})")
+            
+            # 대화 엔트리 생성
+            conversation_entry = {
+                "timestamp": timestamp.isoformat(),
+                "text": text,
+                "emotion": emotion_analysis,
+                "speaker_role": speaker_role,  # "assistant" (의사) or "user" (환자)
+                # "audio_file_path": audio_file_path
+            }
+            
+            # 세션 데이터에 추가
+            session = self.session_data[session_id]
+            session["conversation_entries"].append(conversation_entry)
+            # session["audio_files"].append(audio_file_path)
+            
+            print(f"📝 [{session_id}] 대화 엔트리 추가: {speaker_role} - {text[:50]}...")
+            
+            # 평가 완료 후 임시 WAV 파일들 삭제
+            try:
+                await self._cleanup_audio_files(audio_file_path)
+            except Exception as e:
+                print(f"❌ [{audio_file_path}] 임시 WAV 파일 삭제 실패: {e}")
+            
+            return {
+                "success": True,
+                "entry": conversation_entry,
+                "total_entries": len(session["conversation_entries"])
+            }
+            
+        except Exception as e:
+            print(f"❌ [{session_id}] 대화 엔트리 추가 실패: {e}")
+            return {"error": str(e)}
 
     async def load_emotion_model(self):
         """감정 분석 모델 로드 (서비스 시작 시 한 번만)"""
@@ -165,18 +223,19 @@ class EvaluationService:
             # 감정 분석 수행
             with torch.no_grad():
                 inputs = {
-                    "input_values": audio_data.unsqueeze(0),  # 배치 차원 추가
+                    "input_values": audio_data,  # 이미 배치 차원이 있음 (1, sequence_length)
                     "attention_mask": None
                 }
                 
                 outputs = self.emotion_model(**inputs)
-                logits = outputs.logits
+                logits = outputs['emotion_logits']
                 
                 # 예측 결과 계산
                 probabilities = torch.nn.functional.softmax(logits, dim=-1)
                 predicted_id = torch.argmax(logits, dim=-1).item()
                 confidence = probabilities[0][predicted_id].item()
                 
+                # 예측 감정 결과
                 predicted_emotion = self.emotion_labels[predicted_id]
                 
                 # 모든 감정별 확률
@@ -207,7 +266,7 @@ class EvaluationService:
             
             if len(audio) > target_length:
                 # 가운데 부분 사용
-                start_idx = (len(audio) - target_length) // 2
+                start_idx = np.random.randint(0, len(audio) - target_length + 1)
                 audio = audio[start_idx:start_idx + target_length]
             elif len(audio) < target_length:
                 # 패딩 추가
@@ -215,8 +274,8 @@ class EvaluationService:
                 audio = np.pad(audio, (0, pad_length), mode='constant', constant_values=0)
             
             # 정규화
-            if np.max(np.abs(audio)) > 0:
-                audio = audio / np.max(np.abs(audio)) * 0.8
+            # if np.max(np.abs(audio)) > 0:
+            #     audio = audio / np.max(np.abs(audio)) * 0.8
             
             # Wav2Vec2 processor로 변환
             inputs = self.emotion_processor(
@@ -283,29 +342,6 @@ class EvaluationService:
         
         return evaluation_result
 
-    def _calculate_scores(self, session: Dict) -> Dict:
-        """점수 계산"""
-        interactions = session["interactions"]
-        
-        if not interactions:
-            return {category: 5.0 for category in self.evaluation_criteria.keys()}
-        
-        # 평균 의사소통 점수
-        avg_comm = sum(i["analysis"]["communication_score"] for i in interactions) / len(interactions)
-        
-        scores = {
-            "communication": round(avg_comm, 1),
-            "history_taking": round(min(10.0, len(interactions) * 1.5), 1),  # 질문 개수 기반
-            "clinical_reasoning": round(avg_comm * 0.9, 1),  # 의사소통 기반
-            "professionalism": round(avg_comm * 1.1, 1)  # 의사소통 기반
-        }
-        
-        # 가중 평균 총점
-        total = sum(scores[cat] * self.evaluation_criteria[cat]["weight"] for cat in scores)
-        scores["total"] = round(total, 1)
-        
-        return scores
-
     def get_session_summary(self, user_id: str) -> list:
         """사용자의 세션 요약"""
         return [
@@ -323,43 +359,33 @@ class EvaluationService:
         """종합적인 세션 평가 수행 (SER + LangGraph 통합)"""
         print(f"🔍 [{session_id}] 종합 평가 시작...")
         
-        # 기본 점수 계산
-        basic_scores = self._calculate_scores(session)
-        
-        # 대화 텍스트 분석 (기존 방식)
-        conversation_analysis = await self._analyze_conversation_text(session)
-        
-        # LangGraph 기반 텍스트 평가 (새로 추가)
+        # LangGraph 기반 텍스트 평가 (새로운 대화 데이터 사용)
         langgraph_analysis = None
         if self.llm and self.langgraph_workflow:
             try:
-                # 세션 데이터를 conversation_log 형식으로 변환
+                # 새로운 conversation_entries를 conversation_log 형식으로 변환
                 conversation_log = []
-                for interaction in session["interactions"]:
+                for entry in session.get("conversation_entries", []):
                     conversation_log.append({
-                        "role": "assistant",
-                        "content": interaction["student_question"],
-                        "timestamp": interaction["timestamp"].isoformat()
-                    })
-                    conversation_log.append({
-                        "role": "user",
-                        "content": interaction["patient_response"],
-                        "timestamp": interaction["timestamp"].isoformat()
+                        "role": entry["speaker_role"],
+                        "content": entry["text"],
+                        "timestamp": entry["timestamp"],
+                        "emotion": entry.get("emotion")
                     })
                 
-                langgraph_analysis = await self.evaluate_conversation_with_langgraph(
-                    session["user_id"], 
-                    session["scenario_id"], 
-                    conversation_log
-                )
-                print(f"✅ [{session_id}] LangGraph 텍스트 평가 완료")
+                if conversation_log:  # 대화 데이터가 있는 경우에만 평가
+                    langgraph_analysis = await self.evaluate_conversation_with_langgraph(
+                        session["user_id"], 
+                        session["scenario_id"], 
+                        conversation_log
+                    )
+                    print(f"✅ [{session_id}] LangGraph 텍스트 평가 완료")
+                else:
+                    print(f"⚠️ [{session_id}] 대화 데이터가 없어 LangGraph 평가를 건너뜁니다")
                 
             except Exception as e:
                 print(f"❌ [{session_id}] LangGraph 텍스트 평가 실패: {e}")
                 langgraph_analysis = {"error": str(e)}
-        
-        # 음성 파일 분석 (SER - 감정 분석)
-        audio_analysis = await self._analyze_audio_files(session)
         
         # 종합 결과 구성
         evaluation_result = {
@@ -371,15 +397,10 @@ class EvaluationService:
             "duration_minutes": (session["end_time"] - session["start_time"]).total_seconds() / 60,
             "total_interactions": len(session["interactions"]),
             
-            # 점수 정보
-            "scores": basic_scores,
-            
             # 상세 분석 결과
-            "conversation_analysis": conversation_analysis,
             "langgraph_text_analysis": langgraph_analysis,  # LangGraph 기반 텍스트 평가 결과
-            "audio_analysis": audio_analysis,  # SER 기반 음성 감정 분석 결과
             
-            # 인터랙션 상세
+            # 인터랙션 상세 (기존 방식 - 호환성 유지)
             "interactions": [
                 {
                     "timestamp": interaction["timestamp"].isoformat(),
@@ -389,184 +410,23 @@ class EvaluationService:
                     "analysis": interaction["analysis"]
                 }
                 for interaction in session["interactions"]
+            ],
+            
+            # 새로운 실시간 대화 데이터 (감정 분석 포함)
+            "conversation_entries": [
+                {
+                    "timestamp": entry["timestamp"],
+                    "text": entry["text"],
+                    "speaker_role": entry["speaker_role"],
+                    "emotion": entry.get("emotion"),
+                    "audio_file": entry["audio_file_path"]
+                }
+                for entry in session.get("conversation_entries", [])
             ]
         }
         
         print(f"✅ [{session_id}] 종합 평가 완료")
         return evaluation_result
-
-    async def _analyze_conversation_text(self, session: Dict) -> Dict:
-        """대화 텍스트 분석"""
-        interactions = session["interactions"]
-        
-        if not interactions:
-            return {"error": "분석할 대화가 없습니다"}
-        
-        # 질문 유형 분석
-        question_types = {"개방형": 0, "폐쇄형": 0}
-        medical_keywords = []
-        total_words = 0
-        
-        for interaction in interactions:
-            question = interaction["student_question"]
-            analysis = interaction["analysis"]
-            
-            # 질문 유형 카운트
-            q_type = analysis.get("question_type", "폐쇄형")
-            question_types[q_type] += 1
-            
-            # 의료 키워드 추출
-            medical_terms = ["통증", "언제", "어디", "어떤", "증상", "아프", "불편", "기간", "정도"]
-            for term in medical_terms:
-                if term in question and term not in medical_keywords:
-                    medical_keywords.append(term)
-            
-            total_words += len(question.split())
-        
-        return {
-            "question_distribution": question_types,
-            "medical_keywords_used": medical_keywords,
-            "avg_question_length": total_words / len(interactions) if interactions else 0,
-            "conversation_flow_quality": self._assess_conversation_flow(interactions)
-        }
-
-    async def _analyze_audio_files(self, session: Dict) -> Dict:
-        """음성 파일 감정 분석 (Wav2Vec2 커스텀 모델 사용)"""
-        print("🎵 음성 파일 감정 분석 시작...")
-        
-        # 모델이 로드되지 않았다면 로드
-        if self.emotion_model is None:
-            await self.load_emotion_model()
-        
-        audio_files = []
-        emotion_analyses = []
-        total_duration = 0
-        successful_analyses = 0
-        
-        for i, interaction in enumerate(session["interactions"]):
-            audio_path = interaction.get("audio_file_path")
-            if audio_path and Path(audio_path).exists():
-                audio_files.append(audio_path)
-                
-                print(f"  📂 분석 중 ({i+1}/{len(session['interactions'])}): {Path(audio_path).name}")
-                
-                # 개별 파일 감정 분석
-                emotion_result = await self.analyze_single_audio(audio_path)
-                
-                if "error" not in emotion_result:
-                    emotion_analyses.append({
-                        "interaction_index": i,
-                        "file_name": Path(audio_path).name,
-                        "predicted_emotion": emotion_result["predicted_emotion"],
-                        "confidence": round(emotion_result["confidence"], 3),
-                        "emotion_scores": {k: round(v, 3) for k, v in emotion_result["emotion_scores"].items()},
-                        "timestamp": interaction["timestamp"].isoformat()
-                    })
-                    successful_analyses += 1
-                else:
-                    print(f"    ❌ 분석 실패: {emotion_result['error']}")
-                    emotion_analyses.append({
-                        "interaction_index": i,
-                        "file_name": Path(audio_path).name,
-                        "error": emotion_result["error"]
-                    })
-        
-        # 전체 감정 통계 계산
-        emotion_summary = self._calculate_emotion_statistics(emotion_analyses)
-        
-        print(f"✅ 음성 감정 분석 완료: {successful_analyses}/{len(audio_files)}개 성공")
-        
-        return {
-            "total_audio_files": len(audio_files),
-            "successful_analyses": successful_analyses,
-            "audio_file_paths": audio_files,
-            "emotion_analyses": emotion_analyses,
-            "emotion_summary": emotion_summary,
-            "model_info": {
-                "model_type": "Wav2Vec2-based Emotion Classification",
-                "emotion_labels": self.emotion_labels,
-                "model_loaded": self.emotion_model is not None
-            }
-        }
-
-    def _calculate_emotion_statistics(self, emotion_analyses: List[Dict]) -> Dict:
-        """감정 분석 결과 통계 계산"""
-        if not emotion_analyses:
-            return {"error": "분석된 음성이 없습니다"}
-        
-        # 성공한 분석만 필터링
-        valid_analyses = [a for a in emotion_analyses if "error" not in a]
-        
-        if not valid_analyses:
-            return {"error": "성공한 감정 분석이 없습니다"}
-        
-        # 감정별 횟수 계산
-        emotion_counts = {emotion: 0 for emotion in self.emotion_labels}
-        confidence_sum = 0
-        
-        for analysis in valid_analyses:
-            emotion = analysis["predicted_emotion"]
-            emotion_counts[emotion] += 1
-            confidence_sum += analysis["confidence"]
-        
-        # 비율 계산
-        total_valid = len(valid_analyses)
-        emotion_percentages = {
-            emotion: round(count / total_valid * 100, 1) 
-            for emotion, count in emotion_counts.items()
-        }
-        
-        # 가장 많이 나타난 감정
-        dominant_emotion = max(emotion_counts, key=emotion_counts.get)
-        
-        # 평균 신뢰도
-        avg_confidence = round(confidence_sum / total_valid, 3) if total_valid > 0 else 0
-        
-        return {
-            "total_analyzed": total_valid,
-            "emotion_counts": emotion_counts,
-            "emotion_percentages": emotion_percentages,
-            "dominant_emotion": dominant_emotion,
-            "average_confidence": avg_confidence,
-            "emotion_trend": self._assess_emotion_trend(valid_analyses)
-        }
-
-    def _assess_emotion_trend(self, analyses: List[Dict]) -> str:
-        """감정 변화 추이 평가"""
-        if len(analyses) < 2:
-            return "분석 데이터가 부족함"
-        
-        # 시간순으로 정렬
-        sorted_analyses = sorted(analyses, key=lambda x: x["interaction_index"])
-        
-        emotions = [a["predicted_emotion"] for a in sorted_analyses]
-        
-        # 감정 변화 패턴 분석
-        anxious_count = emotions.count("Anxious")
-        dry_count = emotions.count("Dry")
-        kind_count = emotions.count("Kind")
-        
-        total = len(emotions)
-        
-        if anxious_count / total > 0.5:
-            return "전반적으로 불안한 음성"
-        elif dry_count / total > 0.5:
-            return "전반적으로 건조한 음성"
-        elif kind_count / total > 0.5:
-            return "전반적으로 친절한 음성"
-        else:
-            return "감정이 혼재된 음성"
-
-    def _assess_conversation_flow(self, interactions: List[Dict]) -> str:
-        """대화 흐름 품질 평가"""
-        if len(interactions) < 3:
-            return "충분하지 않은 대화량"
-        elif len(interactions) < 5:
-            return "기본적인 대화 진행"
-        elif len(interactions) < 8:
-            return "적절한 대화 진행"
-        else:
-            return "충분한 대화 진행"
 
     async def _save_evaluation_result(self, session_id: str, result: Dict):
         """평가 결과를 파일로 저장"""
@@ -910,3 +770,90 @@ class EvaluationService:
             **state,
             "final_evaluation_result": final_result
         }
+
+    # =============================================================================
+    # 새로운 실시간 대화 데이터 분석 메서드들
+    # =============================================================================
+    
+    async def _analyze_conversation_entries(self, session: Dict) -> Dict:
+        """새로운 실시간 대화 데이터 분석"""
+        conversation_entries = session.get("conversation_entries", [])
+        
+        if not conversation_entries:
+            return {"error": "분석할 대화 엔트리가 없습니다"}
+        
+        # 역할별 분리
+        doctor_entries = [entry for entry in conversation_entries if entry["speaker_role"] == "assistant"]
+        patient_entries = [entry for entry in conversation_entries if entry["speaker_role"] == "user"]
+        
+        # 감정 분석 통계 (의사 발언만)
+        emotion_stats = {}
+        if doctor_entries:
+            emotions = [entry.get("emotion", {}).get("predicted_emotion") for entry in doctor_entries if entry.get("emotion")]
+            emotions = [e for e in emotions if e]  # None 제거
+            
+            if emotions:
+                from collections import Counter
+                emotion_counts = Counter(emotions)
+                total_emotional_entries = len(emotions)
+                
+                emotion_stats = {
+                    "dominant_emotion": emotion_counts.most_common(1)[0][0] if emotion_counts else None,
+                    "emotion_distribution": {
+                        emotion: count / total_emotional_entries 
+                        for emotion, count in emotion_counts.items()
+                    },
+                    "total_emotional_entries": total_emotional_entries,
+                    "emotional_consistency": max(emotion_counts.values()) / total_emotional_entries if total_emotional_entries > 0 else 0
+                }
+        
+        # 대화 패턴 분석
+        conversation_pattern = {
+            "total_entries": len(conversation_entries),
+            "doctor_utterances": len(doctor_entries),
+            "patient_utterances": len(patient_entries),
+            "conversation_balance": len(patient_entries) / len(doctor_entries) if len(doctor_entries) > 0 else 0,
+            "avg_doctor_utterance_length": sum(len(entry["text"]) for entry in doctor_entries) / len(doctor_entries) if doctor_entries else 0,
+            "avg_patient_utterance_length": sum(len(entry["text"]) for entry in patient_entries) / len(patient_entries) if patient_entries else 0
+        }
+        
+        # 시간 분석
+        if len(conversation_entries) >= 2:
+            first_time = datetime.fromisoformat(conversation_entries[0]["timestamp"])
+            last_time = datetime.fromisoformat(conversation_entries[-1]["timestamp"])
+            duration_seconds = (last_time - first_time).total_seconds()
+            
+            time_analysis = {
+                "conversation_duration_seconds": duration_seconds,
+                "conversation_duration_minutes": duration_seconds / 60,
+                "entries_per_minute": len(conversation_entries) / (duration_seconds / 60) if duration_seconds > 0 else 0
+            }
+        else:
+            time_analysis = {
+                "conversation_duration_seconds": 0,
+                "conversation_duration_minutes": 0,
+                "entries_per_minute": 0
+            }
+        
+        return {
+            "emotion_analysis": emotion_stats,
+            "conversation_pattern": conversation_pattern,
+            "time_analysis": time_analysis,
+            "quality_indicators": {
+                "has_emotional_data": len([e for e in doctor_entries if e.get("emotion")]) > 0,
+                "conversation_completeness": len(conversation_entries) >= 10,  # 최소 10개 발언
+                "balanced_interaction": 0.3 <= conversation_pattern["conversation_balance"] <= 3.0
+            }
+        }
+
+    async def _cleanup_audio_files(self, audio_file_path: str):
+        """평가 완료 후 임시 WAV 파일들 삭제"""
+
+        try:
+            file_path_obj = Path(audio_file_path)
+            if file_path_obj.exists():
+                file_path_obj.unlink()  # 파일 삭제
+                print(f"🗑️ 임시 WAV 파일 삭제: {audio_file_path}")
+                    
+        except Exception as e:
+            print(f"❌ WAV 파일 삭제 실패 ({audio_file_path}): {e}")

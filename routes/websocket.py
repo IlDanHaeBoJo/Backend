@@ -171,9 +171,10 @@ class AudioProcessor:
                         "avatar_action": "listening"
                     }, ensure_ascii=False))
             
-            # 임시 파일 정리
-            if temp_path.exists():
-                temp_path.unlink()
+            # 임시 파일 정리 - 평가 서비스에서 관리하므로 여기서는 삭제하지 않음
+            # 평가 완료 시 _cleanup_audio_files()에서 일괄 삭제
+            # if temp_path.exists():
+            #     temp_path.unlink()
                 
         except Exception as e:
             logger.error(f"발화 처리 오류: {e}")
@@ -263,30 +264,44 @@ class AudioProcessor:
             
             print(f"📋 [{user_id}] 평가 데이터: {len(formatted_conversation)}개 메시지, 시나리오: {scenario_id}")
             
-            # 통합된 CPX 평가 실행 (SER + LangGraph)
-            # 먼저 평가 세션을 시작하고 인터랙션을 추가한 후 종료하여 종합 평가 수행
-            session_id = await service_manager.evaluation_service.start_evaluation_session(
-                user_id=user_id,
-                scenario_id=scenario_id
-            )
-            
-            # 대화 로그를 인터랙션으로 변환하여 추가
-            for i in range(0, len(formatted_conversation), 2):
-                if i + 1 < len(formatted_conversation):
-                    student_msg = formatted_conversation[i]
-                    patient_msg = formatted_conversation[i + 1]
-                    
-                    await service_manager.evaluation_service.add_interaction(
-                        session_id=session_id,
-                        student_question=student_msg.get("content", ""),
-                        patient_response=patient_msg.get("content", ""),
-                        audio_file_path=None  # 오디오 파일은 별도 처리
-                    )
-            
-            # 평가 세션 종료 및 종합 평가 수행
-            evaluation_result = await service_manager.evaluation_service.end_evaluation_session(session_id)
+            # 기존 평가 세션 ID 확인 (이미 실시간으로 데이터가 수집되고 있음)
+            if user_id in audio_processor.user_evaluation_sessions:
+                session_id = audio_processor.user_evaluation_sessions[user_id]
+                print(f"🎯 [{user_id}] 기존 평가 세션 사용: {session_id}")
+                
+                # 평가 세션 종료 및 종합 평가 수행 (실시간 수집된 데이터 사용)
+                evaluation_result = await service_manager.evaluation_service.end_evaluation_session(session_id)
+                
+            else:
+                # 백업: 평가 세션이 없으면 새로 생성 (기존 방식)
+                print(f"⚠️ [{user_id}] 기존 평가 세션이 없어 새로 생성합니다")
+                session_id = await service_manager.evaluation_service.start_evaluation_session(
+                    user_id=user_id,
+                    scenario_id=scenario_id
+                )
+                
+                # 대화 로그를 인터랙션으로 변환하여 추가
+                for i in range(0, len(formatted_conversation), 2):
+                    if i + 1 < len(formatted_conversation):
+                        student_msg = formatted_conversation[i]
+                        patient_msg = formatted_conversation[i + 1]
+                        
+                        await service_manager.evaluation_service.add_interaction(
+                            session_id=session_id,
+                            student_question=student_msg.get("content", ""),
+                            patient_response=patient_msg.get("content", ""),
+                            audio_file_path=None
+                        )
+                
+                # 평가 세션 종료 및 종합 평가 수행
+                evaluation_result = await service_manager.evaluation_service.end_evaluation_session(session_id)
             
             print(f"✅ [{user_id}] 평가 완료 - 총점: {evaluation_result.get('scores', {}).get('total_score', 0)}")
+            
+            # 평가 세션 정리
+            if user_id in audio_processor.user_evaluation_sessions:
+                del audio_processor.user_evaluation_sessions[user_id]
+                print(f"🧹 [{user_id}] 평가 세션 정리 완료")
             
             # 평가 결과를 데이터베이스에 저장 (향후 구현)
             # await self._save_evaluation_to_database(user_id, evaluation_result)
@@ -300,7 +315,7 @@ class AudioProcessor:
                 "scores": {"total_score": 0}
             }
     
-    async def _generate_ai_response(self, user_id: str, user_text: str) -> Dict[str, Any]:
+    async def _generate_ai_response(self, user_id: str, user_text: str, audio_file_path: str = None) -> Dict[str, Any]:
         """AI 응답 생성 (시나리오 기반)"""
         try:
             # 세션 정보 가져오기
@@ -329,14 +344,34 @@ class AudioProcessor:
             # TTS 생성
             audio_path = await service_manager.tts_service.generate_speech(response_text)
             
-            # 평가 서비스에 상호작용 기록 (세션이 있는 경우만)
+            # 평가 서비스에 실시간 대화 데이터 기록 (세션이 있는 경우만)
             if user_id in audio_processor.user_evaluation_sessions:
                 session_id = audio_processor.user_evaluation_sessions[user_id]
+                
+                # 1. 사용자(환자) 음성 데이터 추가
+                if audio_file_path:
+                    await service_manager.evaluation_service.add_conversation_entry(
+                        session_id=session_id,
+                        audio_file_path=audio_file_path,
+                        text=user_text,
+                        speaker_role="user"  # 환자
+                    )
+                
+                # 2. AI(의사) 응답 데이터 추가 (TTS 음성 생성 후)
+                if audio_path:
+                    await service_manager.evaluation_service.add_conversation_entry(
+                        session_id=session_id,
+                        audio_file_path=audio_path,
+                        text=response_text,
+                        speaker_role="assistant"  # 의사
+                    )
+                
+                # 3. 기존 방식 호환성 유지
                 await service_manager.evaluation_service.record_interaction(
                     session_id, 
                     user_text, 
                     response_text, 
-                    None  # audio_file_path는 별도 처리
+                    audio_file_path
                 )
             
             # 응답 데이터 구성
