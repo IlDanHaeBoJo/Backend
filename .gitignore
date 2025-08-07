@@ -29,12 +29,21 @@ env/
 ENV/
 env.bak/
 venv.bak/
+.venv/
 
 # Environment Variables
 .env
 .env.local
 .env.production
 .env.staging
+rest-client.env.json
+
+# Google Cloud Keys
+gcloud-key.json
+*.json
+!package.json
+!package-lock.json
+!tsconfig.json
 
 # IDE
 .vscode/
@@ -108,8 +117,12 @@ temp/
 
 # Backup files
 *.bak
-*.backup 
+*.backup
 
+<<<<<<< HEAD
+# Node modules
+node_modules/
+=======
 
 # 대용량 파일 제외
 /config
@@ -128,3 +141,4 @@ docker/
 *.m4a
 *.mp3
 __pycache__/
+>>>>>>> upstream/main
