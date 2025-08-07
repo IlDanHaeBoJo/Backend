@@ -12,7 +12,6 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from google.cloud import speech
 
 from core.startup import service_manager
-from services.langgraph_evaluation_service import LangGraphEvaluationService
 from core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -28,8 +27,6 @@ class AudioProcessor:
         self.user_sessions: Dict[str, Dict] = {}
         # 평가 세션 ID 관리
         self.user_evaluation_sessions: Dict[str, str] = {}  # user_id -> session_id
-        # CPX 평가 서비스 (LangGraph 버전)
-        self.cpx_evaluator = LangGraphEvaluationService()
     
     def get_user_session(self, user_id: str) -> Dict[str, Any]:
         """사용자 세션 가져오기 또는 생성"""
@@ -266,12 +263,28 @@ class AudioProcessor:
             
             print(f"📋 [{user_id}] 평가 데이터: {len(formatted_conversation)}개 메시지, 시나리오: {scenario_id}")
             
-            # CPX 평가 실행
-            evaluation_result = await self.cpx_evaluator.evaluate_conversation(
+            # 통합된 CPX 평가 실행 (SER + LangGraph)
+            # 먼저 평가 세션을 시작하고 인터랙션을 추가한 후 종료하여 종합 평가 수행
+            session_id = await service_manager.evaluation_service.start_evaluation_session(
                 user_id=user_id,
-                scenario_id=scenario_id,
-                conversation_log=formatted_conversation
+                scenario_id=scenario_id
             )
+            
+            # 대화 로그를 인터랙션으로 변환하여 추가
+            for i in range(0, len(formatted_conversation), 2):
+                if i + 1 < len(formatted_conversation):
+                    student_msg = formatted_conversation[i]
+                    patient_msg = formatted_conversation[i + 1]
+                    
+                    await service_manager.evaluation_service.add_interaction(
+                        session_id=session_id,
+                        student_question=student_msg.get("content", ""),
+                        patient_response=patient_msg.get("content", ""),
+                        audio_file_path=None  # 오디오 파일은 별도 처리
+                    )
+            
+            # 평가 세션 종료 및 종합 평가 수행
+            evaluation_result = await service_manager.evaluation_service.end_evaluation_session(session_id)
             
             print(f"✅ [{user_id}] 평가 완료 - 총점: {evaluation_result.get('scores', {}).get('total_score', 0)}")
             
@@ -323,7 +336,7 @@ class AudioProcessor:
                     session_id, 
                     user_text, 
                     response_text, 
-                    audio_file_path
+                    None  # audio_file_path는 별도 처리
                 )
             
             # 응답 데이터 구성
