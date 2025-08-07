@@ -94,11 +94,11 @@ async def register(user_data: UserCreateSchema, db: AsyncSession = Depends(get_d
     return UserResponseSchema(
         id=new_user.id,
         username=new_user.username,
-        email=new_user.user_detail.email if new_user.user_detail else None,
-        name=new_user.user_detail.name if new_user.user_detail else None,
+        email=user_data.email, # user_data에서 직접 이메일 사용
+        name=user_data.name, # user_data에서 직접 이름 사용
         role=new_user.role,
-        student_id=new_user.user_detail.student_id if new_user.user_detail else None,
-        major=new_user.user_detail.major if new_user.user_detail else None
+        student_id=user_data.student_id, # user_data에서 직접 학번 사용
+        major=user_data.major # user_data에서 직접 전공 사용
     )
 
 @router.patch("/change-password", summary="비밀번호 변경")
