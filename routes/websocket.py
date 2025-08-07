@@ -24,6 +24,8 @@ class AudioProcessor:
     def __init__(self):
         # 사용자별 세션 관리
         self.user_sessions: Dict[str, Dict] = {}
+        # 평가 세션 ID 관리
+        self.user_evaluation_sessions: Dict[str, str] = {}  # user_id -> session_id
     
     def get_user_session(self, user_id: str) -> Dict[str, Any]:
         """사용자 세션 가져오기 또는 생성"""
@@ -44,6 +46,8 @@ class AudioProcessor:
         """사용자 세션 정리"""
         if user_id in self.user_sessions:
             del self.user_sessions[user_id]
+        if user_id in self.user_evaluation_sessions:
+            del self.user_evaluation_sessions[user_id]
     
     async def detect_voice_activity(self, audio_chunk: bytes) -> bool:
         """음성 활동 감지 (VAD)"""
@@ -137,8 +141,8 @@ class AudioProcessor:
             if user_text:
                 logger.info(f"[{user_id}] STT 결과: {user_text}")
                 
-                # AI 응답 생성
-                response_data = await self._generate_ai_response(user_id, user_text)
+                # AI 응답 생성 (음성 파일 경로 포함)
+                response_data = await self._generate_ai_response(user_id, user_text, str(temp_path))
                 
                 # 취소 확인 (마지막 체크)
                 if session["should_cancel"]:
@@ -221,7 +225,7 @@ class AudioProcessor:
         
         return text
     
-    async def _generate_ai_response(self, user_id: str, user_text: str) -> Dict[str, Any]:
+    async def _generate_ai_response(self, user_id: str, user_text: str, audio_file_path: str = None) -> Dict[str, Any]:
         """AI 응답 생성 (시나리오 기반)"""
         try:
             # 입력 로깅
@@ -237,6 +241,16 @@ class AudioProcessor:
             
             # TTS 생성
             audio_path = await service_manager.tts_service.generate_speech(response_text)
+            
+            # 평가 서비스에 상호작용 기록 (세션이 있는 경우만)
+            if user_id in audio_processor.user_evaluation_sessions:
+                session_id = audio_processor.user_evaluation_sessions[user_id]
+                await service_manager.evaluation_service.record_interaction(
+                    session_id, 
+                    user_text, 
+                    response_text, 
+                    audio_file_path
+                )
             
             # 응답 데이터 구성
             response_data = {
@@ -255,6 +269,22 @@ class AudioProcessor:
                 response_data["avatar_action"] = "goodbye"
                 response_data["message"] = "진료가 완료되었습니다. 세션이 곧 종료됩니다."
                 print(f"🏁 [{user_id}] 대화 종료 - 음성 처리를 중단합니다")
+                
+                # 평가 세션 종료 및 결과 생성
+                if user_id in audio_processor.user_evaluation_sessions:
+                    session_id = audio_processor.user_evaluation_sessions[user_id]
+                    print(f"📊 [{user_id}] 평가 세션 종료 및 결과 생성 시작...")
+                    evaluation_result = await service_manager.evaluation_service.end_evaluation_session(
+                        session_id
+                    )
+                    response_data["evaluation_summary"] = {
+                        "session_id": session_id,
+                        "total_interactions": evaluation_result.get("total_interactions", 0),
+                        "duration": evaluation_result.get("duration_minutes", 0),
+                        "scores": evaluation_result.get("scores", {})
+                    }
+                    # 평가 세션 정리
+                    del audio_processor.user_evaluation_sessions[user_id]
             
             return response_data
             
@@ -398,11 +428,19 @@ async def handle_command(websocket: WebSocket, user_id: str, command: Dict):
         
         if success:
             scenario_name = service_manager.llm_service.scenarios[scenario_id]["name"]
+            
+            # 평가 세션 시작
+            session_id = await service_manager.evaluation_service.start_evaluation_session(
+                user_id, scenario_id
+            )
+            audio_processor.user_evaluation_sessions[user_id] = session_id
+            
             response = {
                 "type": "scenario_selected",
                 "scenario_id": scenario_id,
                 "scenario_name": scenario_name,
-                "message": f"✅ {scenario_name} 선택됨!\n\n이제 환자에게 말을 걸어보세요.",
+                "session_id": session_id,
+                "message": f"✅ {scenario_name} 선택됨!\n\n평가 세션이 시작되었습니다.\n이제 환자에게 말을 걸어보세요.",
                 "avatar_action": "ready"
             }
         else:

@@ -90,9 +90,17 @@ class ServiceManager:
         self.tts_service = TTSService()
         logger.info("✅ TTS 서비스 초기화 완료")
 
-        # Evaluatuin 서비스 초기화
+        # Evaluation 서비스 초기화
         self.evaluation_service = EvaluationService()
         logger.info("✅ Evaluation 서비스 초기화 완료")
+        
+        # 감정 분석 모델 로드
+        try:
+            await self.evaluation_service.load_emotion_model()
+            logger.info("✅ 감정 분석 모델 로드 완료")
+        except Exception as e:
+            logger.warning(f"⚠️  감정 분석 모델 로드 실패: {e}")
+            logger.info("💡 평가 기능은 텍스트 분석만 수행됩니다")
 
         
         # 벡터 서비스 초기화 (SQLite 이슈 처리)
