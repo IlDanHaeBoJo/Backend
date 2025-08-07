@@ -19,18 +19,21 @@ refresh_tokens_db: Dict[str, Dict[str, str]] = {} # {refresh_token_id: {"usernam
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-conf = ConnectionConfig(
-    MAIL_USERNAME=settings.MAIL_USERNAME,
-    MAIL_PASSWORD=settings.MAIL_PASSWORD,
-    MAIL_FROM=settings.MAIL_FROM,
-    MAIL_PORT=settings.MAIL_PORT,
-    MAIL_SERVER=settings.MAIL_SERVER,
-    MAIL_FROM_NAME=settings.MAIL_FROM_NAME,
-    MAIL_STARTTLS=settings.MAIL_STARTTLS, # MAIL_TLS 대신 MAIL_STARTTLS 사용
-    MAIL_SSL_TLS=settings.MAIL_SSL_TLS, # MAIL_SSL 대신 MAIL_SSL_TLS 사용
-    USE_CREDENTIALS=settings.USE_CREDENTIALS,
-    VALIDATE_CERTS=settings.VALIDATE_CERTS
-)
+# 이메일 설정이 완료된 경우에만 ConnectionConfig 생성
+conf = None
+if settings.MAIL_FROM and settings.MAIL_USERNAME and settings.MAIL_PASSWORD and settings.MAIL_SERVER:
+    conf = ConnectionConfig(
+        MAIL_USERNAME=settings.MAIL_USERNAME,
+        MAIL_PASSWORD=settings.MAIL_PASSWORD,
+        MAIL_FROM=settings.MAIL_FROM,
+        MAIL_PORT=settings.MAIL_PORT,
+        MAIL_SERVER=settings.MAIL_SERVER,
+        MAIL_FROM_NAME=settings.MAIL_FROM_NAME,
+        MAIL_STARTTLS=settings.MAIL_STARTTLS, # MAIL_TLS 대신 MAIL_STARTTLS 사용
+        MAIL_SSL_TLS=settings.MAIL_SSL_TLS, # MAIL_SSL 대신 MAIL_SSL_TLS 사용
+        USE_CREDENTIALS=settings.USE_CREDENTIALS,
+        VALIDATE_CERTS=settings.VALIDATE_CERTS
+    )
 
 class UserCreateSchema(BaseModel):
     username: str
@@ -230,6 +233,10 @@ async def send_verification_email(email: str, code: str):
     NOTE: This is a placeholder function. Actual email sending logic (e.g., using SMTP)
     needs to be implemented here.
     """
+    if conf is None:
+        print(f"⚠️ 이메일 설정이 없어서 이메일 전송을 건너뜁니다. 확인 코드: {code}")
+        return
+    
     message = MessageSchema(
         subject="비밀번호 재설정 본인 확인 코드",
         recipients=[email],
@@ -263,6 +270,10 @@ async def send_temporary_password_email(email: str, temp_password: str):
     NOTE: This is a placeholder function. Actual email sending logic (e.g., using SMTP)
     needs to be implemented here.
     """
+    if conf is None:
+        print(f"⚠️ 이메일 설정이 없어서 이메일 전송을 건너뜁니다. 임시 비밀번호: {temp_password}")
+        return
+    
     message = MessageSchema(
         subject="임시 비밀번호 발급",
         recipients=[email],

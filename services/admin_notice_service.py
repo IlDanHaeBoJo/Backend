@@ -38,19 +38,18 @@ async def get_important_notices(db: AsyncSession, notice_service: NoticeService)
     logger.info("관리자가 중요 공지사항을 조회했습니다.")
     return await notice_service.get_important_notices(db)
 
-async def toggle_notice_important(db: AsyncSession, notice_id: int, notice_service: NoticeService) -> Optional[Notice]:
-    """공지사항 중요 여부 토글 (관리자용)"""
-    logger.info(f"관리자가 공지사항 ID {notice_id}의 중요 여부를 토글했습니다.")
+async def update_notice_important(db: AsyncSession, notice_id: int, important: bool, notice_service: NoticeService) -> Optional[Notice]:
+    """공지사항 중요도 업데이트 (관리자용)"""
+    logger.info(f"관리자가 공지사항 ID {notice_id}의 중요도를 {important}로 변경했습니다.")
     notice = await notice_service.get_notice_by_id(db, notice_id)
     if not notice:
         return None
     
-    # important 필드를 토글
-    new_important_status = not notice.important
+    # important 필드를 업데이트
     updated_notice = await notice_service.update_notice(
         db, 
         notice_id, 
-        NoticeUpdate(important=new_important_status)
+        NoticeUpdate(important=important)
     )
     return updated_notice
 
