@@ -12,10 +12,17 @@ router = APIRouter(prefix="/student/notices", tags=["학생용 공지사항"])
 @router.get("/", summary="모든 공지사항 조회 (학생용)", response_model=List[Notice])
 async def get_all_notices(
     db: AsyncSession = Depends(get_db),
+<<<<<<< HEAD
     current_user: User = Depends(get_current_user) # User 객체로 변경
 ):
     """학생이 모든 공지사항을 최신순으로 조회합니다."""
     notice_service = NoticeService()
+=======
+    notice_service: NoticeService = Depends(NoticeService),
+    current_user: User = Depends(get_current_user) # User 객체로 변경
+):
+    """학생이 모든 공지사항을 최신순으로 조회합니다."""
+>>>>>>> upstream/main
     student_notice_service_instance = StudentNoticeService()
     return await student_notice_service_instance.get_all_notices(db, notice_service)
 
@@ -23,10 +30,17 @@ async def get_all_notices(
 async def get_notice(
     notice_id: int,
     db: AsyncSession = Depends(get_db),
+<<<<<<< HEAD
     current_user: User = Depends(get_current_user) # User 객체로 변경
 ):
     """학생이 ID로 특정 공지사항을 조회합니다."""
     notice_service = NoticeService()
+=======
+    notice_service: NoticeService = Depends(NoticeService),
+    current_user: User = Depends(get_current_user) # User 객체로 변경
+):
+    """학생이 ID로 특정 공지사항을 조회합니다."""
+>>>>>>> upstream/main
     student_notice_service_instance = StudentNoticeService()
     notice = await student_notice_service_instance.get_notice_by_id(db, notice_id, notice_service)
     if not notice:
@@ -36,6 +50,7 @@ async def get_notice(
         )
     return notice
 
+<<<<<<< HEAD
 @router.get("/high-priority/", summary="높은 우선순위 공지사항 조회 (학생용)", response_model=List[Notice])
 async def get_high_priority_notices(
     db: AsyncSession = Depends(get_db),
@@ -45,16 +60,34 @@ async def get_high_priority_notices(
     notice_service = NoticeService()
     student_notice_service_instance = StudentNoticeService()
     return await student_notice_service_instance.get_high_priority_notices(db, notice_service)
+=======
+@router.get("/important/", summary="중요 공지사항 조회 (학생용)", response_model=List[Notice])
+async def get_important_notices(
+    db: AsyncSession = Depends(get_db),
+    notice_service: NoticeService = Depends(NoticeService),
+    current_user: User = Depends(get_current_user) # User 객체로 변경
+):
+    """학생이 높은 우선순위 공지사항만 조회합니다."""
+    student_notice_service_instance = StudentNoticeService()
+    return await student_notice_service_instance.get_important_notices(db, notice_service)
+>>>>>>> upstream/main
 
 
 @router.get("/recent/", summary="최근 공지사항 조회 (학생용)", response_model=List[Notice])
 async def get_recent_notices(
     limit: int = 5,
     db: AsyncSession = Depends(get_db),
+<<<<<<< HEAD
     current_user: User = Depends(get_current_user) # User 객체로 변경
 ):
     """학생이 최근 공지사항을 조회합니다 (기본 5개)."""
     notice_service = NoticeService()
+=======
+    notice_service: NoticeService = Depends(NoticeService),
+    current_user: User = Depends(get_current_user) # User 객체로 변경
+):
+    """학생이 최근 공지사항을 조회합니다 (기본 5개)."""
+>>>>>>> upstream/main
     student_notice_service_instance = StudentNoticeService()
     return await student_notice_service_instance.get_recent_notices(db, notice_service, limit)
 
@@ -62,9 +95,16 @@ async def get_recent_notices(
 async def search_notices(
     keyword: str,
     db: AsyncSession = Depends(get_db),
+<<<<<<< HEAD
     current_user: User = Depends(get_current_user) # User 객체로 변경
 ):
     """학생이 키워드로 공지사항을 검색합니다."""
     notice_service = NoticeService()
+=======
+    notice_service: NoticeService = Depends(NoticeService),
+    current_user: User = Depends(get_current_user) # User 객체로 변경
+):
+    """학생이 키워드로 공지사항을 검색합니다."""
+>>>>>>> upstream/main
     student_notice_service_instance = StudentNoticeService()
     return await student_notice_service_instance.search_notices(db, keyword, notice_service)

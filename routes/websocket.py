@@ -109,7 +109,10 @@ class AudioProcessor:
             
             # 임시 WAV 파일 생성
             timestamp = int(asyncio.get_event_loop().time())
-            temp_path = settings.TEMP_AUDIO_DIR / f"stream_{user_id}_{timestamp}.wav"
+            # 사용자별 하위 디렉터리 생성 (세션별)
+            user_audio_dir = settings.TEMP_AUDIO_DIR / str(user_id) / settings.RUN_ID
+            user_audio_dir.mkdir(parents=True, exist_ok=True)
+            temp_path = user_audio_dir / f"stream_{timestamp}.wav"
             
             # 오디오 저장
             await self.save_audio_buffer_as_wav(audio_buffer, str(temp_path))
@@ -432,6 +435,43 @@ async def handle_command(websocket: WebSocket, user_id: str, command: Dict):
             "avatar_action": "goodbye"
         }
         await websocket.send_text(json.dumps(response, ensure_ascii=False))
+        
+    elif cmd_type == "text_input":
+        # 텍스트 직접 입력 (STT 우회용)
+        text_input = command.get("text", "")
+        logger.info(f"[{user_id}] 📝 텍스트 직접 입력: '{text_input}'")
+        
+        if not text_input.strip():
+            await websocket.send_text(json.dumps({
+                "type": "error",
+                "message": "입력 텍스트가 비어있습니다.",
+                "avatar_action": "error"
+            }, ensure_ascii=False))
+            return
+        
+        # 세션 가져오기
+        session = audio_processor.get_user_session(user_id)
+        
+        # 대화 종료 확인
+        if session.get("conversation_ended", False):
+            logger.info(f"🔒 [{user_id}] 대화 종료됨 - 텍스트 입력 차단")
+            await websocket.send_text(json.dumps({
+                "type": "conversation_ended",
+                "message": "대화가 이미 종료되었습니다.",
+                "avatar_action": "goodbye"
+            }, ensure_ascii=False))
+            return
+        
+        # AI 응답 생성 (음성 처리와 동일한 로직)
+        response_data = await audio_processor._generate_ai_response(user_id, text_input)
+        
+        # 대화 종료 확인 및 세션에 플래그 설정
+        if response_data.get("conversation_ended", False):
+            session["conversation_ended"] = True
+            logger.info(f"🏁 [{user_id}] 텍스트 입력으로 대화 종료 감지")
+        
+        # 응답 전송
+        await websocket.send_text(json.dumps(response_data, ensure_ascii=False))
         
     elif cmd_type == "ping":
         # 연결 상태 확인

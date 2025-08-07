@@ -16,6 +16,7 @@ from services.user_service import (
     get_refresh_token_user,
     delete_refresh_token,
     get_user_by_username,
+<<<<<<< HEAD
     UserCreateSchema,
     UserLoginSchema,
     UserDeleteSchema,
@@ -24,6 +25,29 @@ from services.user_service import (
 )
 from core.config import settings, get_db
 from core.models import User
+=======
+    get_user_by_email, # get_user_by_email 임포트 추가
+    update_password, # update_password 임포트 추가
+    generate_temporary_password, # generate_temporary_password 임포트 추가
+    send_temporary_password_email, # send_temporary_password_email 임포트 추가
+    generate_verification_code, # generate_verification_code 임포트 추가
+    send_verification_email, # send_verification_email 임포트 추가
+    verify_code, # verify_code 임포트 추가
+    verify_password,
+    UserCreateSchema,
+    UserLoginSchema,
+    UserDeleteSchema,
+    PasswordChangeSchema, # PasswordChangeSchema 임포트 추가
+    ForgotPasswordRequestSchema, # ForgotPasswordRequestSchema 임포트 추가
+    VerifyCodeRequestSchema, # VerifyCodeRequestSchema 임포트 추가
+    UserResponseSchema, # UserResponseSchema 임포트 추가
+    refresh_tokens_db,
+    verification_codes_db # verification_codes_db 임포트 추가
+)
+from core.config import settings, get_db
+from core.models import User
+from datetime import datetime, timedelta # datetime, timedelta 임포트 추가
+>>>>>>> upstream/main
 
 router = APIRouter()
 
@@ -87,6 +111,23 @@ async def register(user_data: UserCreateSchema, db: AsyncSession = Depends(get_d
         student_id=new_user.user_detail.student_id if new_user.user_detail else None,
         major=new_user.user_detail.major if new_user.user_detail else None
     )
+<<<<<<< HEAD
+=======
+
+@router.patch("/change-password", summary="비밀번호 변경")
+async def change_password(
+    password_change: PasswordChangeSchema,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    if not verify_password(password_change.current_password, current_user.hashed_password):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Incorrect current password"
+        )
+    
+    await update_password(db, current_user, password_change.new_password)
+    return {"message": "Password updated successfully"}
+>>>>>>> upstream/main
 
 @router.post("/login", summary="로그인", response_model=Token)
 async def login(user_login: UserLoginSchema, db: AsyncSession = Depends(get_db)):
@@ -196,3 +237,63 @@ async def read_users_me(
         student_id=user.user_detail.student_id if user.user_detail else None,
         major=user.user_detail.major if user.user_detail else None
     )
+<<<<<<< HEAD
+=======
+
+@router.post("/request-password-reset", summary="비밀번호 재설정 요청 (본인 확인 코드 전송)")
+async def request_password_reset(
+    request_data: ForgotPasswordRequestSchema,
+    db: AsyncSession = Depends(get_db)
+):
+    user = await get_user_by_username(db, request_data.username)
+    if not user or (user.user_detail and user.user_detail.email != request_data.email):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, 
+            detail="User with provided username and email not found"
+        )
+    
+    # 본인 확인 코드 생성 및 저장
+    code = generate_verification_code()
+    expires_at = datetime.utcnow() + timedelta(minutes=settings.VERIFICATION_CODE_EXPIRE_MINUTES) # 설정 파일에 추가 필요
+    verification_codes_db[request_data.email] = {"code": code, "expires": expires_at}
+
+    # 이메일 전송 (실제 구현 필요)
+    await send_verification_email(request_data.email, code)
+
+    return {"message": "Verification code sent to your email"}
+
+@router.post("/verify-password-reset-code", summary="비밀번호 재설정 본인 확인 코드 검증 및 임시 비밀번호 발급")
+async def verify_password_reset_code(
+    verify_data: VerifyCodeRequestSchema,
+    db: AsyncSession = Depends(get_db) # DB 세션 추가
+):
+    if not verify_code(verify_data.email, verify_data.code):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, 
+            detail="Invalid or expired verification code"
+        )
+    
+    # 본인 확인이 성공하면 해당 이메일로 사용자 조회
+    user = await get_user_by_email(db, verify_data.email)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, 
+            detail="User not found for the provided email"
+        )
+    
+    # 임시 비밀번호 생성 (아직 DB에 업데이트하지 않음)
+    temp_password = await generate_temporary_password()
+
+    # 임시 비밀번호 이메일 전송
+    try:
+        await send_temporary_password_email(verify_data.email, temp_password)
+        # 이메일 전송 성공 시에만 비밀번호 업데이트
+        await update_password(db, user, temp_password)
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to send temporary password email: {e}"
+        )
+
+    return {"message": "Verification successful. Temporary password sent to your email."}
+>>>>>>> upstream/main
