@@ -1,0 +1,136 @@
+2025-07-30 02:10:19,639 - INFO - Starting test execution.
+2025-07-30 02:10:19,639 - INFO - Execution command: python evaluate_generation.py --model_name_or_path='./results/qwen_14b_professional_lora_cot_v2/checkpoint-28000' --output_path='./results/전문 서술형 테스트셋_답변.csv' --mode='generation' --generation_data_path='./datasets/250109_전문 서술형 테스트셋_ver02.csv' --generation_data_question_column_name='question' --log_file='generation_execution_log.txt'
+2025-07-30 02:10:19,639 - INFO - Process started at: 2025-07-30 02:10:19.639505
+2025-07-30 02:10:22,083 - INFO - Starting evaluation script.
+2025-07-30 02:10:22,083 - INFO - Arguments: Namespace(model_name_or_path='./results/qwen_14b_professional_lora_cot_v2/checkpoint-28000', output_path='./results/전문 서술형 테스트셋_답변.csv', essential_data_path='./datasets/241030_[훈련용] 필수QA_ver01 (18627).csv', professional_data_path='./datasets/241030_[훈련용] 전문QA_ver01 (14753).csv', test_data_path='./datasets/241030_[테스트용] KorMedMCQA_ver01 (2494).csv', generation_data_path='./datasets/250109_전문 서술형 테스트셋_ver02.csv', generation_data_question_column_name='question', mode='generation', log_file='generation_execution_log.txt')
+2025-07-30 02:10:22,083 - INFO - mode: generation
+2025-07-30 02:10:22,207 - INFO - CUDA is available. Number of GPUs: 3
+2025-07-30 02:10:22,219 - INFO -   GPU 0: NVIDIA GeForce RTX 3090
+2025-07-30 02:10:22,219 - INFO -   GPU 1: NVIDIA GeForce RTX 3090
+2025-07-30 02:10:22,219 - INFO -   GPU 2: NVIDIA GeForce RTX 3090
+2025-07-30 02:13:25,390 - INFO - Process ended at: 2025-07-30 02:13:25.390115
+2025-07-30 02:13:25,390 - INFO - Total duration: 0:03:05.750610
+2025-07-30 02:44:56,157 - INFO - Starting test execution.
+2025-07-30 02:44:56,157 - INFO - Execution command: python evaluate_generation.py --model_name_or_path='./results/qwen_14b_professional_lora_cot_v2/checkpoint-28000' --output_path='./results/필수_검사용_질문_예시_답변.csv' --mode='generation' --generation_data_path='./datasets/검사용_질문_예시.csv' --generation_data_question_column_name='question' --log_file='generation_execution_log.txt'
+2025-07-30 02:44:56,157 - INFO - Process started at: 2025-07-30 02:44:56.157485
+2025-07-30 02:44:58,711 - INFO - Starting evaluation script.
+2025-07-30 02:44:58,711 - INFO - Arguments: Namespace(model_name_or_path='./results/qwen_14b_professional_lora_cot_v2/checkpoint-28000', output_path='./results/필수_검사용_질문_예시_답변.csv', essential_data_path='./datasets/241030_[훈련용] 필수QA_ver01 (18627).csv', professional_data_path='./datasets/241030_[훈련용] 전문QA_ver01 (14753).csv', test_data_path='./datasets/241030_[테스트용] KorMedMCQA_ver01 (2494).csv', generation_data_path='./datasets/검사용_질문_예시.csv', generation_data_question_column_name='question', mode='generation', log_file='generation_execution_log.txt')
+2025-07-30 02:44:58,711 - INFO - mode: generation
+2025-07-30 02:44:58,875 - INFO - CUDA is available. Number of GPUs: 3
+2025-07-30 02:44:58,887 - INFO -   GPU 0: NVIDIA GeForce RTX 3090
+2025-07-30 02:44:58,887 - INFO -   GPU 1: NVIDIA GeForce RTX 3090
+2025-07-30 02:44:58,887 - INFO -   GPU 2: NVIDIA GeForce RTX 3090
+2025-07-30 02:45:06,323 - INFO - Model and tokenizer loaded from ./results/qwen_14b_professional_lora_cot_v2/checkpoint-28000
+2025-07-30 02:45:06,325 - INFO - Data loaded
+2025-07-30 02:45:06,326 - INFO - Text generation pipeline created
+2025-07-30 02:45:06,326 - INFO - Processing generation data
+2025-07-30 02:45:06,326 - INFO - Processing index 0
+2025-07-30 02:45:16,937 - INFO - Question: 크론병(Crohn’s Disease)의 진단 기준은?
+2025-07-30 02:45:16,937 - INFO - Output: 다음의 질문에 대하여 간략한 답변을 작성하시오.
+    질문: 크론병(Crohn’s Disease)의 진단 기준은?
+    답변: 크론병의 진단은 내시경, 영상학적 검사, 조직학적 검사 등을 통해 이루어진다. 내시경 검사로는 소장 내시경, 대장 내시경 등이 있으며, 영상학적 검사로는 컴퓨터 단층 촬영(CT), 자기공명 영상(MRI), 초음파 등이 사용된다. 조직학적 검사로는 생검을 통해 염증성 병변을 확인한다. 이러한 검사 결과를 종합하여 크론병의 진단을 내린다.
+2025-07-30 02:45:16,937 - INFO - Processing index 1
+2025-07-30 02:45:54,638 - INFO - Question: 하지동맥폐색질환(Peripheral Artery Disease, PAD)의 진단 기준은?
+2025-07-30 02:45:54,638 - INFO - Output: 다음의 질문에 대하여 간략한 답변을 작성하시오.
+    질문: 하지동맥폐색질환(Peripheral Artery Disease, PAD)의 진단 기준은?
+    답변: 하지동맥폐색질환(PAD)의 진단 기준은 다음과 같다. 1) 하지 동맥의 혈류 저하로 인한 증상이 있는 경우, 2) 하지 동맥의 혈류저하로 인한 증상이 없는 경우, 3) 하지 동맥의 혈류가 저하된 증거가 있는 경우, 4) 하지동맥폐색질환의 위험인자가 있는 경우, 5) 하지동맥폐색질환으로 인한 합병증이 있는 경우, 6) 하지동맥폐색질환과 관련된 수술이나 치료를 받은 경우, 7) 하지동맥폐색질환을 진단하기 위한 검사를 받은 경우, 8) 하지동맥폐색질환이 의심되는 증상이 있는 경우, 9) 하지동맥폐색질환에 대한 교육을 받은 경우, 10) 하지동맥폐색질환 예방을 위한 조치를 취한 경우, 11) 하지동맥폐색질환 관련 연구에 참여한 경우, 12) 하지동맥폐색질환 치료제를 복용한 경우, 13) 하지동맥폐색질환 전문가의 진단을 받은 경우, 14) 하지동맥 폐색질환의 증상이 있는 경우, 15) 하지동맥 폐색질환이 의심되는 검사 결과가 있는 경우, 16) 하지동맥 폐색 질환으로 인한 합병증이 의심되는 경우, 17) 하지동맥 폐색 질환이 의심되는 수술이나 치료가 필요한 경우, 18) 하지동맥 폐쇄 질환 예방을 위한 조치를 취할 필요가 있는 경우, 19) 하지동맥 폐쇄질환 관련 연구에 참여할 필요가 있는 경우, 20) 하지동맥 폐쇄 질환이 의심되는 증상이 나타난 경우, 21) 하지동맥 폐쇄질환이 의심되는 검사 결과를 받은 경우, 22) 하지동맥
+2025-07-30 02:45:55,504 - INFO - Process completed successfully.
+2025-07-30 02:45:55,504 - INFO - Process output:
+
+2025-07-30 02:45:55,504 - INFO - Process ended at: 2025-07-30 02:45:55.504784
+2025-07-30 02:45:55,504 - INFO - Total duration: 0:00:59.347299
+2025-07-30 02:49:14,873 - INFO - Starting test execution.
+2025-07-30 02:49:14,873 - INFO - Execution command: python evaluate_generation.py --model_name_or_path='./results/qwen_14b_professional_lora_cot_v2/checkpoint-28000' --output_path='./results/필수_검사용_질문_예시_답변_테스트용.csv' --mode='generation' --generation_data_path='./datasets/검사용_질문_예시_테스트용.csv' --generation_data_question_column_name='question' --log_file='generation_execution_log.txt'
+2025-07-30 02:49:14,873 - INFO - Process started at: 2025-07-30 02:49:14.873611
+2025-07-30 02:49:17,349 - INFO - Starting evaluation script.
+2025-07-30 02:49:17,349 - INFO - Arguments: Namespace(model_name_or_path='./results/qwen_14b_professional_lora_cot_v2/checkpoint-28000', output_path='./results/필수_검사용_질문_예시_답변_테스트용.csv', essential_data_path='./datasets/241030_[훈련용] 필수QA_ver01 (18627).csv', professional_data_path='./datasets/241030_[훈련용] 전문QA_ver01 (14753).csv', test_data_path='./datasets/241030_[테스트용] KorMedMCQA_ver01 (2494).csv', generation_data_path='./datasets/검사용_질문_예시_테스트용.csv', generation_data_question_column_name='question', mode='generation', log_file='generation_execution_log.txt')
+2025-07-30 02:49:17,350 - INFO - mode: generation
+2025-07-30 02:49:17,505 - INFO - CUDA is available. Number of GPUs: 3
+2025-07-30 02:49:17,518 - INFO -   GPU 0: NVIDIA GeForce RTX 3090
+2025-07-30 02:49:17,519 - INFO -   GPU 1: NVIDIA GeForce RTX 3090
+2025-07-30 02:49:17,519 - INFO -   GPU 2: NVIDIA GeForce RTX 3090
+2025-07-30 02:49:25,024 - INFO - Model and tokenizer loaded from ./results/qwen_14b_professional_lora_cot_v2/checkpoint-28000
+2025-07-30 02:49:25,027 - INFO - Data loaded
+2025-07-30 02:49:25,027 - INFO - Text generation pipeline created
+2025-07-30 02:49:25,027 - INFO - Processing generation data
+2025-07-30 02:49:25,028 - INFO - Processing index 0
+2025-07-30 02:49:32,372 - INFO - Question: 양극성 장애의 주요 증상은 ?
+2025-07-30 02:49:32,372 - INFO - Output: 다음의 질문에 대하여 간략한 답변을 작성하시오.
+    질문: 양극성 장애의 주요 증상은 ?
+    답변: 양극성 장애의 주된 증상은 극단적인 기분 변화입니다. 환자는 때로는 매우 기분이 좋고 활기차며, 때로는 매우 우울하고 무기력해집니다. 이러한 기분 변화는 일상생활에 큰 영향을 미칠 수 있으며, 때로는 위험한 행동으로 이어질 수 있습니다.
+2025-07-30 02:49:33,187 - INFO - Process completed successfully.
+2025-07-30 02:49:33,188 - INFO - Process output:
+
+2025-07-30 02:49:33,188 - INFO - Process ended at: 2025-07-30 02:49:33.188314
+2025-07-30 02:49:33,188 - INFO - Total duration: 0:00:18.314703
+2025-07-30 04:09:32,730 - INFO - Starting test execution.
+2025-07-30 04:09:32,730 - INFO - Execution command: python evaluate_generation_input.py --model_name_or_path='./results/qwen_14b_professional_lora_cot_v2/checkpoint-28000' --output_path='./results/필수_검사용_질문_예시_답변_테스트용.csv' --mode='generation' --generation_data_path='' --generation_data_question_column_name='question' --log_file='generation_execution_log.txt'
+2025-07-30 04:09:32,730 - INFO - Process started at: 2025-07-30 04:09:32.730713
+2025-07-30 04:09:32,754 - ERROR - Process failed.
+2025-07-30 04:09:32,754 - ERROR - Error output:
+  File "/home/ghdrnjs/CPX/NIA_Medical_LLM/evaluate_generation_input.py", line 63
+    elif args.mode == "generation":
+    ^
+IndentationError: expected an indented block after 'elif' statement on line 62
+
+2025-07-30 04:09:32,754 - INFO - Process ended at: 2025-07-30 04:09:32.754874
+2025-07-30 04:09:32,755 - INFO - Total duration: 0:00:00.024161
+2025-07-30 04:10:01,152 - INFO - Starting test execution.
+2025-07-30 04:10:01,153 - INFO - Execution command: python evaluate_generation_input.py --model_name_or_path='./results/qwen_14b_professional_lora_cot_v2/checkpoint-28000' --output_path='./results/필수_검사용_질문_예시_답변_테스트용.csv' --mode='generation' --generation_data_path='' --generation_data_question_column_name='question' --log_file='generation_execution_log.txt'
+2025-07-30 04:10:01,153 - INFO - Process started at: 2025-07-30 04:10:01.153116
+2025-07-30 04:10:03,701 - INFO - Starting evaluation script.
+2025-07-30 04:10:03,701 - INFO - Arguments: Namespace(model_name_or_path='./results/qwen_14b_professional_lora_cot_v2/checkpoint-28000', output_path='./results/필수_검사용_질문_예시_답변_테스트용.csv', essential_data_path='./datasets/241030_[훈련용] 필수QA_ver01 (18627).csv', professional_data_path='./datasets/241030_[훈련용] 전문QA_ver01 (14753).csv', test_data_path='./datasets/241030_[테스트용] KorMedMCQA_ver01 (2494).csv', generation_data_path='', generation_data_question_column_name='question', mode='generation', log_file='generation_execution_log.txt')
+2025-07-30 04:10:03,701 - INFO - mode: generation
+2025-07-30 04:10:03,854 - INFO - CUDA is available. Number of GPUs: 3
+2025-07-30 04:10:03,865 - INFO -   GPU 0: NVIDIA GeForce RTX 3090
+2025-07-30 04:10:03,865 - INFO -   GPU 1: NVIDIA GeForce RTX 3090
+2025-07-30 04:10:03,865 - INFO -   GPU 2: NVIDIA GeForce RTX 3090
+2025-07-30 04:10:11,235 - INFO - Model and tokenizer loaded from ./results/qwen_14b_professional_lora_cot_v2/checkpoint-28000
+2025-07-30 04:10:11,236 - INFO - Text generation pipeline created
+2025-07-30 04:10:11,916 - ERROR - Process failed.
+2025-07-30 04:10:11,917 - ERROR - Error output:
+2025-07-30 04:10:03,701 - INFO - Starting evaluation script.
+2025-07-30 04:10:03,701 - INFO - Arguments: Namespace(model_name_or_path='./results/qwen_14b_professional_lora_cot_v2/checkpoint-28000', output_path='./results/필수_검사용_질문_예시_답변_테스트용.csv', essential_data_path='./datasets/241030_[훈련용] 필수QA_ver01 (18627).csv', professional_data_path='./datasets/241030_[훈련용] 전문QA_ver01 (14753).csv', test_data_path='./datasets/241030_[테스트용] KorMedMCQA_ver01 (2494).csv', generation_data_path='', generation_data_question_column_name='question', mode='generation', log_file='generation_execution_log.txt')
+2025-07-30 04:10:03,701 - INFO - mode: generation
+2025-07-30 04:10:03,854 - INFO - CUDA is available. Number of GPUs: 3
+2025-07-30 04:10:03,865 - INFO -   GPU 0: NVIDIA GeForce RTX 3090
+2025-07-30 04:10:03,865 - INFO -   GPU 1: NVIDIA GeForce RTX 3090
+2025-07-30 04:10:03,865 - INFO -   GPU 2: NVIDIA GeForce RTX 3090
+
+Loading checkpoint shards:   0%|          | 0/8 [00:00<?, ?it/s]
+Loading checkpoint shards:  12%|█▎        | 1/8 [00:00<00:05,  1.24it/s]
+Loading checkpoint shards:  25%|██▌       | 2/8 [00:01<00:04,  1.28it/s]
+Loading checkpoint shards:  38%|███▊      | 3/8 [00:02<00:03,  1.31it/s]
+Loading checkpoint shards:  50%|█████     | 4/8 [00:03<00:02,  1.35it/s]
+Loading checkpoint shards:  62%|██████▎   | 5/8 [00:03<00:02,  1.39it/s]
+Loading checkpoint shards:  75%|███████▌  | 6/8 [00:04<00:01,  1.40it/s]
+Loading checkpoint shards:  88%|████████▊ | 7/8 [00:05<00:00,  1.42it/s]
+Loading checkpoint shards: 100%|██████████| 8/8 [00:05<00:00,  1.70it/s]
+Loading checkpoint shards: 100%|██████████| 8/8 [00:05<00:00,  1.48it/s]
+2025-07-30 04:10:11,235 - INFO - Model and tokenizer loaded from ./results/qwen_14b_professional_lora_cot_v2/checkpoint-28000
+2025-07-30 04:10:11,236 - INFO - Text generation pipeline created
+Traceback (most recent call last):
+  File "/home/ghdrnjs/CPX/NIA_Medical_LLM/evaluate_generation_input.py", line 130, in <module>
+    main()
+  File "/home/ghdrnjs/CPX/NIA_Medical_LLM/evaluate_generation_input.py", line 86, in main
+    data = pd.read_csv(args.generation_data_path)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ghdrnjs/anaconda3/envs/nia/lib/python3.11/site-packages/pandas/io/parsers/readers.py", line 1026, in read_csv
+    return _read(filepath_or_buffer, kwds)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ghdrnjs/anaconda3/envs/nia/lib/python3.11/site-packages/pandas/io/parsers/readers.py", line 620, in _read
+    parser = TextFileReader(filepath_or_buffer, **kwds)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ghdrnjs/anaconda3/envs/nia/lib/python3.11/site-packages/pandas/io/parsers/readers.py", line 1620, in __init__
+    self._engine = self._make_engine(f, self.engine)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ghdrnjs/anaconda3/envs/nia/lib/python3.11/site-packages/pandas/io/parsers/readers.py", line 1880, in _make_engine
+    self.handles = get_handle(
+                   ^^^^^^^^^^^
+  File "/home/ghdrnjs/anaconda3/envs/nia/lib/python3.11/site-packages/pandas/io/common.py", line 873, in get_handle
+    handle = open(
+             ^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: ''
+
+2025-07-30 04:10:11,917 - INFO - Process ended at: 2025-07-30 04:10:11.917457
+2025-07-30 04:10:11,917 - INFO - Total duration: 0:00:10.764341

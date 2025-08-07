@@ -3,6 +3,8 @@ from typing import Dict
 from pathlib import Path
 import wave
 import os
+import time
+from core.config import settings
 
 
 class SpeechProcessingService:
@@ -72,8 +74,11 @@ class SpeechProcessingService:
             return
 
             # 1. STT 처리
-        audio_path = f"temp_audio/speech_{user_id}.wav"
-        self.save_audio(buffer["audio"], audio_path)
+        user_audio_dir = settings.TEMP_AUDIO_DIR / str(user_id) / settings.RUN_ID
+        user_audio_dir.mkdir(parents=True, exist_ok=True)
+        timestamp = int(time.time())
+        audio_path = user_audio_dir / f"speech_{timestamp}.wav"
+        self.save_audio(buffer["audio"], str(audio_path))
 
         result = self.whisper_model.transcribe(audio_path)
         user_text = result["text"].strip()
@@ -101,8 +106,8 @@ class SpeechProcessingService:
         buffer["silence"] = 0
 
         # 6. 임시 파일 정리
-        if os.path.exists(f"temp_audio/speech_{user_id}.wav"):
-            os.remove(f"temp_audio/speech_{user_id}.wav")
+        if os.path.exists(audio_path):
+            os.remove(audio_path)
 
         return {
             "user_text": user_text,
@@ -114,8 +119,12 @@ class SpeechProcessingService:
         """실시간 부분 전사 (버퍼 분석용)"""
         try:
             buffer = self.user_buffers[user_id]
-            temp_path = f"temp_audio/partial_{user_id}.wav"
-            self.save_audio(buffer["audio"], temp_path)
+            from core.config import settings
+            user_audio_dir = settings.TEMP_AUDIO_DIR / str(user_id) / settings.RUN_ID
+            user_audio_dir.mkdir(parents=True, exist_ok=True)
+            import time
+            temp_path = user_audio_dir / f"partial_{int(time.time())}.wav"
+            self.save_audio(buffer["audio"], str(temp_path))
 
             result = self.whisper_model.transcribe(temp_path)
             partial_text = result["text"].strip()

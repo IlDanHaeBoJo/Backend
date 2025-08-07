@@ -24,3 +24,4 @@ python-jose[cryptography]==3.3.0₩
 asyncpg==0.29.0
 SQLAlchemy==2.0.23
 passlib[bcrypt]==1.7.4
+FastAPI-Mail==1.4.1

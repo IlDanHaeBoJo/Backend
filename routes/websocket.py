@@ -116,7 +116,10 @@ class AudioProcessor:
             
             # 임시 WAV 파일 생성
             timestamp = int(asyncio.get_event_loop().time())
-            temp_path = settings.TEMP_AUDIO_DIR / f"stream_{user_id}_{timestamp}.wav"
+            # 사용자별 하위 디렉터리 생성 (세션별)
+            user_audio_dir = settings.TEMP_AUDIO_DIR / str(user_id) / settings.RUN_ID
+            user_audio_dir.mkdir(parents=True, exist_ok=True)
+            temp_path = user_audio_dir / f"stream_{timestamp}.wav"
             
             # 오디오 저장
             await self.save_audio_buffer_as_wav(audio_buffer, str(temp_path))
