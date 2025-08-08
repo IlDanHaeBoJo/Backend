@@ -19,7 +19,7 @@ from fastapi.staticfiles import StaticFiles
 
 from core.config import settings
 from core.startup import service_manager
-from routes import admin_notices, api, student_notices, websocket, auth # auth 라우터 추가
+from routes import admin_notices, api, student_notices, websocket, auth, attachments # attachments 라우터 추가
 
 logger = logging.getLogger(__name__)
 
@@ -80,6 +80,7 @@ app.include_router(websocket.router, tags=["WebSocket"])
 app.include_router(auth.router, prefix="/auth", tags=["Auth"]) # Auth 라우터 추가
 app.include_router(admin_notices.router, tags=["관리자용 공지사항"])
 app.include_router(student_notices.router, tags=["학생용 공지사항"])
+app.include_router(attachments.router, tags=["첨부파일"])
 
 # 정적 파일 서빙 (TTS 오디오 파일)
 app.mount("/static", StaticFiles(directory="static"), name="static")
