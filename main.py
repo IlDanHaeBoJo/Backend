@@ -19,7 +19,7 @@ from fastapi.staticfiles import StaticFiles
 
 from core.config import settings
 from core.startup import service_manager
-from routes import admin_notices, api, student_notices, websocket, auth # auth 라우터 추가
+from routes import admin_notices, api, student_notices, websocket, auth, cpx # cpx 라우터 추가
 
 logger = logging.getLogger(__name__)
 
@@ -78,6 +78,8 @@ app.add_middleware(
 app.include_router(api.router, tags=["API"])
 app.include_router(websocket.router, tags=["WebSocket"])
 app.include_router(auth.router, prefix="/auth", tags=["Auth"]) # Auth 라우터 추가
+app.include_router(cpx.router) # CPX 학생용 라우터 포함
+app.include_router(cpx.admin_router) # CPX 관리자용 라우터 포함
 app.include_router(admin_notices.router, tags=["관리자용 공지사항"])
 app.include_router(student_notices.router, tags=["학생용 공지사항"])
 
