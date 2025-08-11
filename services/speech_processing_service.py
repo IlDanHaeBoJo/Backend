@@ -77,10 +77,10 @@ class SpeechProcessingService:
         user_audio_dir = settings.TEMP_AUDIO_DIR / str(user_id) / settings.RUN_ID
         user_audio_dir.mkdir(parents=True, exist_ok=True)
         timestamp = int(time.time())
-        audio_path = user_audio_dir / f"speech_{timestamp}.wav"
-        self.save_audio(buffer["audio"], str(audio_path))
+        stt_audio_path = user_audio_dir / f"speech_{timestamp}.wav"
+        self.save_audio(buffer["audio"], str(stt_audio_path))
 
-        result = self.whisper_model.transcribe(audio_path)
+        result = self.whisper_model.transcribe(stt_audio_path)
         user_text = result["text"].strip()
 
         if not user_text:
@@ -96,7 +96,7 @@ class SpeechProcessingService:
         print(f"🤖 AI 응답: '{ai_response}'")
 
         # 3. TTS 생성
-        audio_path = await self.tts_service.generate_speech(ai_response)
+        tts_audio_path = await self.tts_service.generate_speech(ai_response)
 
         # 4. 평가 기록 (현재는 WebSocket에서 처리됨)
 
@@ -105,14 +105,14 @@ class SpeechProcessingService:
         buffer["speaking"] = False
         buffer["silence"] = 0
 
-        # 6. 임시 파일 정리
-        if os.path.exists(audio_path):
-            os.remove(audio_path)
+        # 6. STT용 임시 파일만 정리 (TTS 파일은 유지)
+        if os.path.exists(str(stt_audio_path)):
+            os.remove(str(stt_audio_path))
 
         return {
             "user_text": user_text,
             "ai_text": ai_response,
-            "audio_url": f"/static/audio/{Path(audio_path).name}" if audio_path else None
+            "audio_url": Path(tts_audio_path).name if tts_audio_path else None
         }
 
     def get_partial_transcript(self, user_id: str) -> str:

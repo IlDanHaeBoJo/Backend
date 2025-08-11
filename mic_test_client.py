@@ -122,7 +122,8 @@ class MicrophoneClient:
             logger.info("🎤 마이크 입력 일시 차단 (TTS 재생 중)")
             
             # 서버에서 오디오 파일 다운로드
-            full_url = f"{self.base_url}{audio_url}"
+            full_url = f"{self.base_url}/cache/tts/{audio_url}"
+            logger.info(f"🌐 실제 요청 URL: {full_url}")
             response = requests.get(full_url, timeout=10)
             
             if response.status_code == 200:

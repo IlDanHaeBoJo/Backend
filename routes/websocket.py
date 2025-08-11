@@ -400,16 +400,18 @@ class AudioProcessor:
             
             # TTS 생성
             audio_path = await service_manager.tts_service.generate_speech(response_text)
+            logger.info(f"🔊 TTS 파일 생성됨: {audio_path}")
             
             # AI 발화의 큐 적재는 process_complete_utterance에서 수행 (여기서는 하지 않음)
             
             # 응답 데이터 구성
+            audio_url = Path(audio_path).name if audio_path else None
+            logger.info(f"🔗 WebSocket 전송할 audio_url: {audio_url}")
             response_data = {
                 "type": "voice_response",
                 "user_text": user_text,
                 "ai_text": response_text,
-                "audio_url": f"/static/audio/{Path(audio_path).name}" if audio_path else None,
-                "audio_path": str(audio_path) if audio_path else None,
+                "audio_url": audio_url,
                 "avatar_action": "talking",
                 "processing_time": "실시간",
                 "conversation_ended": conversation_ended,
