@@ -847,12 +847,17 @@ class EvaluationService:
         }
 
     async def _cleanup_audio_files(self, audio_file_path: str):
-        """평가 완료 후 임시 WAV 파일들 삭제"""
+        """평가 완료 후 임시 WAV 파일들만 삭제 (TTS 캐시 파일은 보존)"""
 
         try:
             file_path_obj = Path(audio_file_path)
-            if file_path_obj.exists():
-                file_path_obj.unlink()  # 파일 삭제
+            # TTS 캐시 파일은 삭제하지 않음
+            if "cache/tts" in str(file_path_obj):
+                print(f"🔒 TTS 캐시 파일 보존: {audio_file_path}")
+                return
+                
+            if file_path_obj.exists() and file_path_obj.suffix == '.wav':
+                file_path_obj.unlink()  # WAV 파일만 삭제
                 print(f"🗑️ 임시 WAV 파일 삭제: {audio_file_path}")
                     
         except Exception as e:
