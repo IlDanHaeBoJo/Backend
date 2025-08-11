@@ -199,7 +199,7 @@ class AudioProcessor:
                                 session_id,
                                 user_id,
                                 session["seq"],
-                                response_data.get("audio_path"),
+                                response_data.get("audio_url"),
                                 response_data.get("ai_text", ""),
                             )
                         )
@@ -287,91 +287,6 @@ class AudioProcessor:
         
         return text
     
-    async def _perform_automatic_evaluation(self, user_id: str, session: Dict) -> Dict:
-        """대화 종료 시 자동 CPX 평가 실행"""
-        try:
-            print(f"🎯 [{user_id}] CPX 자동 평가 시작")
-            
-            # 평가에 필요한 정보 수집
-            conversation_log = session.get("conversation_log", [])
-            scenario_id = session.get("scenario_id", "unknown")
-            
-            if not conversation_log:
-                print(f"⚠️ [{user_id}] 대화 로그가 비어있음")
-                return {
-                    "error": "대화 내용이 없어 평가할 수 없습니다.",
-                    "scores": {"total_score": 0}
-                }
-            
-            # 대화 로그를 평가 서비스에 맞는 형식으로 변환
-            formatted_conversation = []
-            for entry in conversation_log:
-                formatted_conversation.extend([
-                    {
-                        "type": "student",
-                        "content": entry.get("student_input", ""),
-                        "timestamp": entry.get("timestamp", "")
-                    },
-                    {
-                        "type": "patient", 
-                        "content": entry.get("patient_response", ""),
-                        "timestamp": entry.get("timestamp", "")
-                    }
-                ])
-            
-            print(f"📋 [{user_id}] 평가 데이터: {len(formatted_conversation)}개 메시지, 시나리오: {scenario_id}")
-            
-            # 기존 평가 세션 ID 확인 (이미 실시간으로 데이터가 수집되고 있음)
-            if user_id in audio_processor.user_evaluation_sessions:
-                session_id = audio_processor.user_evaluation_sessions[user_id]
-                print(f"🎯 [{user_id}] 기존 평가 세션 사용: {session_id}")
-                
-                # 평가 세션 종료 및 종합 평가 수행 (실시간 수집된 데이터 사용)
-                evaluation_result = await service_manager.evaluation_service.end_evaluation_session(session_id)
-                
-            else:
-                # 백업: 평가 세션이 없으면 새로 생성 (기존 방식)
-                print(f"⚠️ [{user_id}] 기존 평가 세션이 없어 새로 생성합니다")
-                session_id = await service_manager.evaluation_service.start_evaluation_session(
-                    user_id=user_id,
-                    scenario_id=scenario_id
-                )
-                
-                # 대화 로그를 인터랙션으로 변환하여 추가
-                for i in range(0, len(formatted_conversation), 2):
-                    if i + 1 < len(formatted_conversation):
-                        student_msg = formatted_conversation[i]
-                        patient_msg = formatted_conversation[i + 1]
-                        
-                        await service_manager.evaluation_service.add_interaction(
-                            session_id=session_id,
-                            student_question=student_msg.get("content", ""),
-                            patient_response=patient_msg.get("content", ""),
-                            audio_file_path=None
-                        )
-                
-                # 평가 세션 종료 및 종합 평가 수행
-                evaluation_result = await service_manager.evaluation_service.end_evaluation_session(session_id)
-            
-            print(f"✅ [{user_id}] 평가 완료 - 총점: {evaluation_result.get('scores', {}).get('total_score', 0)}")
-            
-            # 평가 세션 정리
-            if user_id in audio_processor.user_evaluation_sessions:
-                del audio_processor.user_evaluation_sessions[user_id]
-                print(f"🧹 [{user_id}] 평가 세션 정리 완료")
-            
-            # 평가 결과를 데이터베이스에 저장 (향후 구현)
-            # await self._save_evaluation_to_database(user_id, evaluation_result)
-            
-            return evaluation_result
-            
-        except Exception as e:
-            print(f"❌ [{user_id}] 자동 평가 오류: {e}")
-            return {
-                "error": f"평가 중 오류가 발생했습니다: {str(e)}",
-                "scores": {"total_score": 0}
-            }
-    
     async def _generate_ai_response(self, user_id: str, user_text: str, audio_file_path: str = None) -> Dict[str, Any]:
         """AI 응답 생성 (시나리오 기반)"""
         try:
@@ -389,20 +304,9 @@ class AudioProcessor:
             # 출력 로깅
             print(f"🤖 AI 응답: '{response_text}'")
             
-            # 대화 로그에 저장
-            # conversation_entry = {
-            #     "timestamp": datetime.now().isoformat(),
-            #     "student_input": user_text,
-            #     "patient_response": response_text,
-            #     "type": "interaction"
-            # }
-            # session["conversation_log"].append(conversation_entry)
-            
             # TTS 생성
             audio_path = await service_manager.tts_service.generate_speech(response_text)
             logger.info(f"🔊 TTS 파일 생성됨: {audio_path}")
-            
-            # AI 발화의 큐 적재는 process_complete_utterance에서 수행 (여기서는 하지 않음)
             
             # 응답 데이터 구성
             audio_url = Path(audio_path).name if audio_path else None
@@ -433,72 +337,6 @@ class AudioProcessor:
                 "avatar_action": "error",
                 "conversation_ended": False
             }
-    
-    async def _perform_automatic_evaluation(self, user_id: str, session: Dict) -> Dict[str, Any]:
-        """대화 종료 시 자동 평가 수행"""
-        try:
-            # 평가 세션 ID 가져오기
-            if user_id not in self.user_evaluation_sessions:
-                raise Exception("평가 세션을 찾을 수 없습니다.")
-                
-            session_id = self.user_evaluation_sessions[user_id]
-            print(f"🔍 [{user_id}] 자동 평가 시작 - 세션: {session_id}")
-            
-            # 평가 서비스를 통해 세션 종료 및 종합 평가 수행
-            evaluation_result = await service_manager.evaluation_service.end_evaluation_session(session_id)
-            
-            if "error" in evaluation_result:
-                raise Exception(f"평가 수행 중 오류: {evaluation_result['error']}")
-            
-            print(f"✅ [{user_id}] 자동 평가 완료")
-            return evaluation_result
-            
-        except Exception as e:
-            logger.error(f"자동 평가 오류: {e}")
-            return {
-                "error": str(e),
-                "scores": {"total_score": 0},
-                "message": "평가 중 오류가 발생했습니다."
-            }
-    
-    async def _add_user_conversation_entry_async(self, session_id: str, audio_file_path: str, 
-                                               text: str, user_id: str):
-        """사용자 대화 엔트리를 백그라운드에서 비동기로 추가"""
-        try:
-            await service_manager.evaluation_service.add_conversation_entry(
-                session_id=session_id,
-                audio_file_path=audio_file_path,
-                text=text,
-                speaker_role="user"  # 환자(사용자) 발화
-            )
-            logger.info(f"[{user_id}] 사용자 대화 엔트리 백그라운드 추가 완료")
-        except Exception as e:
-            logger.error(f"[{user_id}] 사용자 대화 엔트리 백그라운드 추가 실패: {e}")
-    
-    async def _add_ai_conversation_entry_async(self, session_id: str, audio_file_path: str, 
-                                             text: str, user_id: str):
-        """AI 대화 엔트리를 백그라운드에서 비동기로 추가"""
-        try:
-            await service_manager.evaluation_service.add_conversation_entry(
-                session_id=session_id,
-                audio_file_path=audio_file_path,
-                text=text,
-                speaker_role="assistant"  # 의사(AI) 응답
-            )
-            logger.info(f"[{user_id}] AI 대화 엔트리 백그라운드 추가 완료")
-        except Exception as e:
-            logger.error(f"[{user_id}] AI 대화 엔트리 백그라운드 추가 실패: {e}")
-    
-    async def _record_interaction_async(self, session_id: str, user_text: str, 
-                                      response_text: str, audio_file_path: str, user_id: str):
-        """인터랙션을 백그라운드에서 비동기로 기록"""
-        try:
-            await service_manager.evaluation_service.record_interaction(
-                session_id, user_text, response_text, audio_file_path
-            )
-            logger.info(f"[{user_id}] 인터랙션 백그라운드 기록 완료")
-        except Exception as e:
-            logger.error(f"[{user_id}] 인터랙션 백그라운드 기록 실패: {e}")
 
     async def _enqueue_with_retry(self, func, *args, **kwargs):
         """비동기 큐 적재에 대한 간단한 백오프 재시도 래퍼
@@ -524,50 +362,6 @@ class AudioProcessor:
             f"enqueue failed after retries: func={getattr(func, '__name__', str(func))}, args={args}, kwargs={kwargs}, err={last_exc}"
         )
         return False
-    
-    async def _background_evaluation_workflow(self, context: Dict):
-        """백그라운드에서 평가 워크플로우 실행 (WebSocket 독립적)"""
-        user_id = context["user_id"]
-        session_id = context["session_id"]
-        
-        try:
-            print(f"🔄 [{user_id}] 백그라운드 평가 워크플로우 시작 - 세션: {session_id}")
-            
-            # 평가 실행 (모든 대화 데이터가 이미 완료된 상태)
-            evaluation_result = await service_manager.evaluation_service.end_evaluation_session(session_id)
-            
-            if "error" in evaluation_result:
-                raise Exception(f"평가 오류: {evaluation_result['error']}")
-            
-            print(f"✅ [{user_id}] 백그라운드 평가 완료 - 총점: {evaluation_result.get('scores', {}).get('total_score', 0)}")
-            
-            # DB에 평가 결과 저장 (향후 구현)
-            await self._save_evaluation_to_database(user_id, evaluation_result)
-            
-            # 평가 완료 후 세션 정리
-            if user_id in audio_processor.user_evaluation_sessions:
-                del audio_processor.user_evaluation_sessions[user_id]
-                print(f"🧹 [{user_id}] 평가 세션 정리 완료")
-            
-            print(f"🎉 [{user_id}] 백그라운드 평가 워크플로우 완료 - DB 저장 성공")
-            
-        except Exception as e:
-            print(f"❌ [{user_id}] 백그라운드 평가 워크플로우 오류: {e}")
-            logger.error(f"백그라운드 평가 워크플로우 실패 [{user_id}]: {e}")
-    
-    async def _save_evaluation_to_database(self, user_id: str, evaluation_result: Dict):
-        """평가 결과를 데이터베이스에 저장 (향후 구현)"""
-        try:
-            # TODO: 실제 DB 저장 로직 구현
-            # 예시:
-            # async with get_db_session() as db:
-            #     await db.save_evaluation_result(user_id, evaluation_result)
-            print(f"💾 [{user_id}] DB 저장 시뮬레이션 완료")
-            # 실제로는 여기서 데이터베이스에 저장
-            
-        except Exception as e:
-            print(f"❌ [{user_id}] DB 저장 오류: {e}")
-            logger.error(f"DB 저장 실패 [{user_id}]: {e}")
 
 # 오디오 프로세서 인스턴스
 audio_processor = AudioProcessor()
