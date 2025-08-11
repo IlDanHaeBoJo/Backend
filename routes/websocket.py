@@ -352,6 +352,7 @@ class AudioProcessor:
             
             # TTS 생성
             audio_path = await service_manager.tts_service.generate_speech(response_text)
+            logger.info(f"🔊 TTS 파일 생성됨: {audio_path}")
             
             if not conversation_ended:
                 # 평가 서비스에 AI(의사) 응답 데이터 백그라운드 추가 (사용자 데이터는 이미 STT 처리 시 추가됨)
@@ -379,11 +380,13 @@ class AudioProcessor:
                         ))
             
             # 응답 데이터 구성
+            audio_url = Path(audio_path).name if audio_path else None
+            logger.info(f"🔗 WebSocket 전송할 audio_url: {audio_url}")
             response_data = {
                 "type": "voice_response",
                 "user_text": user_text,
                 "ai_text": response_text,
-                "audio_url": f"/static/audio/{Path(audio_path).name}" if audio_path else None,
+                "audio_url": audio_url,
                 "avatar_action": "talking",
                 "processing_time": "실시간",
                 "conversation_ended": conversation_ended

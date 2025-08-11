@@ -83,8 +83,8 @@ app.include_router(cpx.admin_router) # CPX 관리자용 라우터 포함
 app.include_router(admin_notices.router, tags=["관리자용 공지사항"])
 app.include_router(student_notices.router, tags=["학생용 공지사항"])
 
-# 정적 파일 서빙 (TTS 오디오 파일)
-app.mount("/static", StaticFiles(directory="static"), name="static")
+# TTS 오디오 파일 서빙 (캐시 디렉토리에서)
+app.mount("/cache", StaticFiles(directory="cache"), name="cache")
 
 if __name__ == "__main__":
     import uvicorn
