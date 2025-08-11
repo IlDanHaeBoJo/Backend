@@ -220,7 +220,11 @@ class NoticeService:
     
     async def delete_notice(self, db: AsyncSession, notice_id: int) -> bool:
         """공지사항 삭제 (첨부파일 포함)"""
-        result = await db.execute(select(DBNotice).filter(DBNotice.notice_id == notice_id))
+        result = await db.execute(
+            select(DBNotice)
+            .options(selectinload(DBNotice.attachments))
+            .filter(DBNotice.notice_id == notice_id)
+        )
         db_notice = result.scalars().first()
         if not db_notice:
             return False
@@ -273,7 +277,11 @@ class NoticeService:
     
     async def increment_view_count(self, db: AsyncSession, notice_id: int) -> bool:
         """공지사항 조회수 증가"""
-        result = await db.execute(select(DBNotice).filter(DBNotice.notice_id == notice_id))
+        result = await db.execute(
+            select(DBNotice)
+            .options(selectinload(DBNotice.attachments))
+            .filter(DBNotice.notice_id == notice_id)
+        )
         db_notice = result.scalars().first()
         if not db_notice:
             return False
@@ -285,7 +293,10 @@ class NoticeService:
     
     async def get_notice_statistics(self, db: AsyncSession) -> NoticeStats:
         """공지사항 통계 조회"""
-        result = await db.execute(select(DBNotice))
+        result = await db.execute(
+            select(DBNotice)
+            .options(selectinload(DBNotice.attachments))
+        )
         db_notices = result.scalars().all()
         if not db_notices:
             return NoticeStats(

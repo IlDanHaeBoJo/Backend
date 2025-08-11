@@ -19,8 +19,7 @@ from fastapi.staticfiles import StaticFiles
 
 from core.config import settings
 from core.startup import service_manager
-from routes import admin_notices, api, student_notices, websocket, auth, attachments # attachments 라우터 추가
-from routes import admin_notices, api, student_notices, websocket, auth, cpx # cpx 라우터 추가
+from routes import admin_notices, api, student_notices, websocket, auth, attachments,cpx  # attachments 라우터 추가, cpx 라우터 추가
 
 logger = logging.getLogger(__name__)
 

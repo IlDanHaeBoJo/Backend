@@ -8,8 +8,17 @@ from sqlalchemy import select, delete
 from sqlalchemy.orm import selectinload
 from core.models import Attachments, Notices
 from core.config import settings
+from core.constants import MAX_FILE_SIZE, ALLOWED_FILE_TYPES, S3_PRESIGNED_URL_EXPIRES_IN
 from pydantic import BaseModel
 from services.s3_service import s3_service
+from utils.exceptions import (
+    NoticeNotFoundException,
+    FileSizeExceededException,
+    UnsupportedFileTypeException,
+    S3UploadFailedException,
+    AttachmentNotFoundException
+)
+from utils.logging_config import attachment_logger
 
 class AttachmentCreate(BaseModel):
     """첨부파일 생성 모델"""
@@ -29,19 +38,41 @@ class AttachmentService:
     
     def __init__(self):
         # 허용된 파일 타입
-        self.allowed_types = [
-            'application/pdf',
-            'application/msword',
-            'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-            'application/vnd.ms-excel',
-            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-            'application/vnd.ms-powerpoint',
-            'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-            'image/jpeg',
-            'image/png',
-            'image/gif',
-            'text/plain'
-        ]
+        self.allowed_types = ALLOWED_FILE_TYPES
+        # 파일 크기 제한
+        self.max_file_size = MAX_FILE_SIZE
+    
+    async def _validate_notice_exists(self, db: AsyncSession, notice_id: int) -> Notices:
+        """공지사항 존재 확인"""
+        notice = await db.get(Notices, notice_id)
+        if not notice:
+            raise NoticeNotFoundException()
+        return notice
+    
+    def _validate_file_size(self, file_size: int):
+        """파일 크기 검증"""
+        if file_size > self.max_file_size:
+            raise FileSizeExceededException()
+    
+    def _validate_file_type(self, file_type: str):
+        """파일 타입 검증"""
+        if file_type not in self.allowed_types:
+            raise UnsupportedFileTypeException()
+    
+    def _extract_s3_key_from_url(self, s3_url: str) -> str:
+        """S3 URL에서 S3 키 추출"""
+        try:
+            # S3 URL에서 키 부분만 추출
+            if s3_service.bucket_name in s3_url and s3_service.region_name in s3_url:
+                # 전체 URL에서 키 부분만 추출
+                key_part = s3_url.split(f"{s3_service.bucket_name}.s3.{s3_service.region_name}.amazonaws.com/")[-1]
+                return key_part
+            else:
+                # URL이 아닌 경우 그대로 반환 (이미 키인 경우)
+                return s3_url
+        except Exception as e:
+            # 오류 발생 시 원본 URL 반환
+            return s3_url
     
     async def create_attachment(
         self, 
@@ -51,29 +82,20 @@ class AttachmentService:
     ) -> Attachments:
         """S3에서 업로드된 파일 정보로 첨부파일 생성"""
         
-        # 공지사항 존재 확인
-        notice = await db.get(Notices, notice_id)
-        if not notice:
-            raise HTTPException(status_code=404, detail="공지사항을 찾을 수 없습니다.")
-        
-        # 파일 크기 제한 (10MB)
-        if attachment_data.file_size > 10 * 1024 * 1024:
-            raise HTTPException(status_code=400, detail="파일 크기는 10MB를 초과할 수 없습니다.")
-        
-        # 허용된 파일 타입 확인
-        if attachment_data.file_type not in self.allowed_types:
-            raise HTTPException(status_code=400, detail="지원하지 않는 파일 형식입니다.")
+        # 공통 검증
+        await self._validate_notice_exists(db, notice_id)
+        self._validate_file_size(attachment_data.file_size)
+        self._validate_file_type(attachment_data.file_type)
         
         # S3 URL에서 S3 키 추출
-        s3_url = attachment_data.s3_url
-        s3_key = s3_url.split(f"{s3_service.bucket_name}.s3.{s3_service.region_name}.amazonaws.com/")[-1]
+        s3_key = self._extract_s3_key_from_url(attachment_data.s3_url)
         
         # 데이터베이스에 기록
         attachment = Attachments(
             notice_id=notice_id,
             original_filename=attachment_data.original_filename,
             stored_filename=s3_key,  # S3 키를 stored_filename에 저장
-            file_path=s3_url,  # S3 URL을 file_path에 저장
+            file_path=attachment_data.s3_url,  # S3 URL을 file_path에 저장
             file_size=attachment_data.file_size,
             file_type=attachment_data.file_type
         )
@@ -82,56 +104,10 @@ class AttachmentService:
         await db.commit()
         await db.refresh(attachment)
         
+        attachment_logger.info(f"첨부파일 생성 완료: {attachment.original_filename} (ID: {attachment.attachment_id})")
         return attachment
     
-    async def upload_attachment(
-        self, 
-        db: AsyncSession, 
-        notice_id: int, 
-        file: UploadFile
-    ) -> Attachments:
-        """파일을 S3에 업로드하고 첨부파일 생성"""
-        
-        # 공지사항 존재 확인
-        notice = await db.get(Notices, notice_id)
-        if not notice:
-            raise HTTPException(status_code=404, detail="공지사항을 찾을 수 없습니다.")
-        
-        # 파일 크기 제한 (10MB)
-        if file.size and file.size > 10 * 1024 * 1024:
-            raise HTTPException(status_code=400, detail="파일 크기는 10MB를 초과할 수 없습니다.")
-        
-        # 허용된 파일 타입 확인
-        if file.content_type not in self.allowed_types:
-            raise HTTPException(status_code=400, detail="지원하지 않는 파일 형식입니다.")
-        
-        # 고유한 S3 키 생성
-        s3_key = s3_service.generate_unique_key(file.filename)
-        
-        # S3에 파일 업로드
-        try:
-            s3_service.upload_fileobj(file.file, s3_key, file.content_type)
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"S3 업로드 실패: {str(e)}")
-        
-        # S3 URL 생성
-        s3_url = s3_service.get_file_url(s3_key)
-        
-        # 데이터베이스에 기록
-        attachment = Attachments(
-            notice_id=notice_id,
-            original_filename=file.filename,
-            stored_filename=s3_key,
-            file_path=s3_url,
-            file_size=file.size or 0,
-            file_type=file.content_type
-        )
-        
-        db.add(attachment)
-        await db.commit()
-        await db.refresh(attachment)
-        
-        return attachment
+    # 백엔드 프록시 방식 제거 - Presigned URL 방식만 사용
     
     async def get_attachments_by_notice(
         self, 
@@ -162,21 +138,26 @@ class AttachmentService:
     ) -> bool:
         """첨부파일 삭제 (S3 파일도 함께 삭제)"""
         
-        attachment = await db.get(Attachments, attachment_id)
+        stmt = select(Attachments).options(selectinload(Attachments.notice)).where(Attachments.attachment_id == attachment_id)
+        result = await db.execute(stmt)
+        attachment = result.scalar_one_or_none()
+        
         if not attachment:
-            raise HTTPException(status_code=404, detail="첨부파일을 찾을 수 없습니다.")
+            raise AttachmentNotFoundException()
         
         # S3에서 파일 삭제
         try:
             s3_service.delete_file(attachment.stored_filename)
+            attachment_logger.info(f"S3 파일 삭제 완료: {attachment.stored_filename}")
         except Exception as e:
             # S3 삭제 실패 시에도 DB에서 삭제
-            pass
+            attachment_logger.warning(f"S3 파일 삭제 실패: {attachment.stored_filename} - {str(e)}")
         
         # 데이터베이스에서 삭제
         await db.delete(attachment)
         await db.commit()
         
+        attachment_logger.info(f"첨부파일 삭제 완료: {attachment.original_filename} (ID: {attachment.attachment_id})")
         return True
     
     async def delete_attachments_by_notice(
