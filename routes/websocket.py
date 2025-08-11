@@ -13,6 +13,12 @@ from google.cloud import speech
 
 from core.startup import service_manager
 from core.config import settings
+from infra.inmemory_queue import (
+    enqueue_user_utterance,
+    enqueue_ai_utterance,
+    enqueue_conversation_ended,
+    start_worker_once,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -146,18 +152,26 @@ class AudioProcessor:
             if user_text:
                 logger.info(f"[{user_id}] STT 결과: {user_text}")
                 
-                # 평가 서비스에 사용자(환자) 대화 엔트리 백그라운드 추가 (비동기)
+                # 사용자 발화 큐 적재 (비동기, 백오프 재시도)
                 if user_id in self.user_evaluation_sessions:
                     session_id = self.user_evaluation_sessions[user_id]
-                    # 백그라운드에서 실행 - STT→LLM→TTS 흐름을 차단하지 않음
-                    asyncio.create_task(self._add_user_conversation_entry_async(
-                        session_id, str(temp_path), user_text, user_id
-                    ))
+                    session.setdefault("seq", 0)
+                    session["seq"] += 1
+                    asyncio.create_task(
+                        self._enqueue_with_retry(
+                            enqueue_user_utterance,
+                            session_id,
+                            user_id,
+                            session["seq"],
+                            str(temp_path),
+                            user_text,
+                        )
+                    )
                 
                 # AI 응답 생성 (음성 파일 경로 포함)
                 response_data = await self._generate_ai_response(user_id, user_text, str(temp_path))
                 
-                # 취소 확인 (마지막 체크)
+            # 취소 확인 (마지막 체크)
                 if session["should_cancel"]:
                     logger.info(f"[{user_id}] ⏹️  처리 취소됨 (새 발화 감지)")
                     if temp_path.exists():
@@ -171,6 +185,40 @@ class AudioProcessor:
                 
                 # WebSocket으로 응답 전송
                 await websocket.send_text(json.dumps(response_data, ensure_ascii=False))
+
+                # 백그라운드 큐 적재 (AI 발화 / 종료)
+                if user_id in self.user_evaluation_sessions:
+                    session_id = self.user_evaluation_sessions[user_id]
+                    if not response_data.get("conversation_ended", False):
+                        # AI 발화 큐 적재 (비동기, 백오프 재시도)
+                        session.setdefault("seq", 0)
+                        session["seq"] += 1
+                        asyncio.create_task(
+                            self._enqueue_with_retry(
+                                enqueue_ai_utterance,
+                                session_id,
+                                user_id,
+                                session["seq"],
+                                response_data.get("audio_path"),
+                                response_data.get("ai_text", ""),
+                            )
+                        )
+                    else:
+                        # 종료 신호 큐 적재 후 소켓 종료 (비동기, 백오프 재시도)
+                        session.setdefault("seq", 0)
+                        session["seq"] += 1
+                        asyncio.create_task(
+                            self._enqueue_with_retry(
+                                enqueue_conversation_ended,
+                                session_id,
+                                user_id,
+                                session["seq"],
+                            )
+                        )
+                        try:
+                            await websocket.close(code=1000)
+                        except Exception:
+                            pass
             else:
                 # 음성 인식 실패
                 if not session["should_cancel"]:
@@ -353,30 +401,7 @@ class AudioProcessor:
             # TTS 생성
             audio_path = await service_manager.tts_service.generate_speech(response_text)
             
-            if not conversation_ended:
-                # 평가 서비스에 AI(의사) 응답 데이터 백그라운드 추가 (사용자 데이터는 이미 STT 처리 시 추가됨)
-                if user_id in audio_processor.user_evaluation_sessions:
-                    session_id = audio_processor.user_evaluation_sessions[user_id]
-                    
-                    # AI(의사) 응답 데이터 백그라운드 추가 (TTS 음성 생성 후)
-                    if audio_path:
-                        asyncio.create_task(self._add_ai_conversation_entry_async(
-                            session_id, audio_path, response_text, user_id
-                        ))
-                    
-                    # 기존 방식 호환성 유지 (백그라운드)
-                    asyncio.create_task(self._record_interaction_async(
-                        session_id, user_text, response_text, audio_file_path, user_id
-                    ))
-            else:
-                # 대화 종료 시: 순차적으로 처리하여 데이터 완성 보장
-                if user_id in audio_processor.user_evaluation_sessions:
-                    session_id = audio_processor.user_evaluation_sessions[user_id]
-                    
-                    if audio_path:
-                        task = asyncio.create_task(self._add_ai_conversation_entry_async(
-                            session_id, audio_path, response_text, user_id
-                        ))
+            # AI 발화의 큐 적재는 process_complete_utterance에서 수행 (여기서는 하지 않음)
             
             # 응답 데이터 구성
             response_data = {
@@ -384,40 +409,17 @@ class AudioProcessor:
                 "user_text": user_text,
                 "ai_text": response_text,
                 "audio_url": f"/static/audio/{Path(audio_path).name}" if audio_path else None,
+                "audio_path": str(audio_path) if audio_path else None,
                 "avatar_action": "talking",
                 "processing_time": "실시간",
-                "conversation_ended": conversation_ended
+                "conversation_ended": conversation_ended,
             }
             
-            # 대화 종료 시 특별 처리
+            # 대화 종료 시 특별 처리(응답 구성만 변경). 평가는 워커가 종료 이벤트 + pending으로 트리거
             if conversation_ended:
                 response_data["type"] = "conversation_ended"
                 response_data["avatar_action"] = "goodbye"
                 response_data["message"] = "진료가 완료되었습니다. 평가 결과는 곧 저장됩니다."
-                print(f"🏁 [{user_id}] 대화 종료 - WebSocket 응답 후 백그라운드 평가 시작")
-                
-                # 평가에 필요한 정보 미리 보존 (WebSocket 연결 종료 대비)
-                evaluation_context = {
-                    "session_id": audio_processor.user_evaluation_sessions.get(user_id),
-                    "user_id": user_id,
-                    "scenario_id": session.get("scenario_id"),
-                    "audio_file_path": audio_file_path
-                }
-                
-                # 진행 중인 백그라운드 작업들 완료 후 평가 실행
-                background_tasks = []
-                
-                # AI 대화 엔트리 추가 task 추가
-                if audio_path:
-                    background_tasks.append(task)
-                
-                # 진행 중인 모든 백그라운드 작업 완료 대기
-                if background_tasks:
-                    await asyncio.gather(*background_tasks)
-                    print(f"✅ [{user_id}] 모든 백그라운드 작업 완료")
-                
-                # 평가 실행
-                asyncio.create_task(self._background_evaluation_workflow(evaluation_context))
             
             return response_data
             
@@ -495,6 +497,31 @@ class AudioProcessor:
             logger.info(f"[{user_id}] 인터랙션 백그라운드 기록 완료")
         except Exception as e:
             logger.error(f"[{user_id}] 인터랙션 백그라운드 기록 실패: {e}")
+
+    async def _enqueue_with_retry(self, func, *args, **kwargs):
+        """비동기 큐 적재에 대한 간단한 백오프 재시도 래퍼
+        - func: enqueue_user_utterance/enqueue_ai_utterance/enqueue_conversation_ended
+        - args: 해당 함수 인자 그대로 전달
+        정책: 3회 재시도, 0.1s, 0.3s, 0.9s 지수 백오프
+        실패 시 로깅만 하고 드롭(요구사항상 유실 허용)
+        """
+        delays = [0.1, 0.3, 0.9]
+        last_exc = None
+        for i, delay in enumerate([0.0] + delays):
+            if delay > 0:
+                await asyncio.sleep(delay)
+            try:
+                await func(*args, **kwargs)
+                return True
+            except Exception as e:
+                last_exc = e
+                logger.warning(
+                    f"enqueue retry {i}/{len(delays)} failed: func={getattr(func, '__name__', str(func))}, err={e}"
+                )
+        logger.error(
+            f"enqueue failed after retries: func={getattr(func, '__name__', str(func))}, args={args}, kwargs={kwargs}, err={last_exc}"
+        )
+        return False
     
     async def _background_evaluation_workflow(self, context: Dict):
         """백그라운드에서 평가 워크플로우 실행 (WebSocket 독립적)"""
@@ -553,6 +580,9 @@ async def websocket_endpoint(websocket: WebSocket, user_id: str):
     session = audio_processor.get_user_session(user_id)
     
     try:
+        # 워커 시작 (최초 1회)
+        start_worker_once()
+
         # 시나리오 선택 메시지 전송
         scenarios = service_manager.llm_service.get_available_scenarios()
         scenario_options = "\n".join([f"{k}. {v}" for k, v in scenarios.items()])
