@@ -80,6 +80,32 @@ class CpxService:
         )
         return result.scalars().all()
 
+    async def get_cpx_result_by_id(self, result_id: int) -> Optional[CpxResults]:
+        """
+        result_id로 특정 CPX 실습 결과를 반환합니다. (관리자용)
+        각 결과에는 상세 정보(CpxDetails)와 평가 정보(CpxEvaluations)가 함께 로드됩니다.
+        """
+        result = await self.db.execute(
+            select(CpxResults).options(
+                joinedload(CpxResults.cpx_detail),
+                joinedload(CpxResults.cpx_evaluation)
+            ).filter(CpxResults.result_id == result_id)
+        )
+        return result.scalars().first()
+
+    async def get_cpx_results_by_student_id(self, student_id: int) -> List[CpxResults]:
+        """
+        특정 학생 ID에 해당하는 CPX 실습 결과 목록을 반환합니다. (관리자용)
+        각 결과에는 상세 정보(CpxDetails)와 평가 정보(CpxEvaluations)가 함께 로드됩니다.
+        """
+        result = await self.db.execute(
+            select(CpxResults).options(
+                joinedload(CpxResults.cpx_detail),
+                joinedload(CpxResults.cpx_evaluation)
+            ).filter(CpxResults.student_id == student_id)
+        )
+        return result.scalars().all()
+
     async def update_cpx_evaluation(self, result_id: int, evaluator_id: int, # evaluation_id 대신 result_id로 변경
                               overall_score: Optional[int] = None,
                               detailed_feedback: Optional[str] = None,

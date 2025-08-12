@@ -123,6 +123,42 @@ async def get_all_cpx_results_for_admin(
     cpx_results = await cpx_service.get_all_cpx_results_admin()
     return [CpxFullDetailsResponse.model_validate(cpx) for cpx in cpx_results] # 명시적 변환
 
+@admin_router.get("/students/{student_id}/results", summary="특정 학생의 CPX 실습 결과 목록 조회 (관리자용)", response_model=List[CpxFullDetailsResponse])
+async def get_cpx_results_by_student_id_admin(
+    student_id: int,
+    current_user: User = Depends(RoleChecker(["admin"])), # admin만 조회 가능
+    cpx_service: CpxService = Depends(get_cpx_service)
+):
+    """
+    특정 학생 ID에 해당하는 CPX 실습 결과 목록을 조회합니다.
+    관리자 역할의 사용자만 이 엔드포인트를 사용할 수 있습니다.
+    """
+    cpx_results = await cpx_service.get_cpx_results_by_student_id(student_id)
+    if not cpx_results:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"학생 ID {student_id}에 대한 CPX 결과를 찾을 수 없습니다."
+        )
+    return [CpxFullDetailsResponse.model_validate(cpx) for cpx in cpx_results]
+
+@admin_router.get("/{result_id}", summary="특정 CPX 실습 결과 상세 조회 (관리자용)", response_model=CpxFullDetailsResponse)
+async def get_single_cpx_result_admin(
+    result_id: int,
+    current_user: User = Depends(RoleChecker(["admin"])), # admin만 조회 가능
+    cpx_service: CpxService = Depends(get_cpx_service)
+):
+    """
+    특정 result_id에 해당하는 CPX 실습 결과의 상세 정보(CpxDetails, CpxEvaluations 포함)를 조회합니다.
+    관리자 역할의 사용자만 이 엔드포인트를 사용할 수 있습니다.
+    """
+    cpx_result = await cpx_service.get_cpx_result_by_id(result_id)
+    if not cpx_result:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="CPX 결과를 찾을 수 없습니다."
+        )
+    return CpxFullDetailsResponse.model_validate(cpx_result)
+
 @admin_router.put("/{result_id}/evaluate", summary="CPX 평가 업데이트 (관리자용)", response_model=CpxEvaluationResponse)
 async def update_cpx_evaluation_api(
     result_id: int,

@@ -68,7 +68,7 @@ class CpxResults(Base):
     student_id = Column(Integer, ForeignKey("users.id"), nullable=False, comment='실습을 실행한 학생 ID (users 테이블의 user_id 참조)')
     patient_name = Column(String(255), nullable=False, comment='환자 이름 또는 역할 (가상 환자 이름)')
     practice_date = Column(DateTime(timezone=True), server_default=func.now(), comment='실습 실행 날짜 및 시간')
-    evaluation_status = Column(String(50), nullable=False, comment='평가 상태 (예: 진행중, 완료, 확인대기, 확인완료)')
+    evaluation_status = Column(String(50), nullable=False, comment='평가 상태 (예: 평가 진행중, 평가 완료, 교수 피드백 완료, 오류)') 
     created_at = Column(DateTime(timezone=True), server_default=func.now(), comment='결과 기록 생성 시간')
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), comment='결과 기록 마지막 업데이트 시간')
 
@@ -97,7 +97,7 @@ class CpxEvaluations(Base):
     overall_score = Column(Integer, comment='전체 점수 (예: 100점 만점)')
     detailed_feedback = Column(Text, comment='학생에게 전달될 종합 피드백 및 상세 평가 코멘트')
     evaluation_date = Column(DateTime(timezone=True), server_default=func.now(), comment='평가 수행 날짜 및 시간')
-    evaluation_status = Column(String(50), nullable=False, comment='평가 처리 상태 (예: 임시저장, 완료, 수정필요)')
+    evaluation_status = Column(String(50), nullable=False, comment='평가 처리 상태 (예: 피드백 대기중, 피드백 완료)')
     created_at = Column(DateTime(timezone=True), server_default=func.now(), comment='평가 기록 생성 시간')
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), comment='평가 기록 마지막 업데이트 시간')
 
