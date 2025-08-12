@@ -2,6 +2,7 @@ import asyncio
 from dataclasses import dataclass
 from typing import Optional, Dict
 from datetime import datetime
+import logging
 
 # service_manager를 직접 참조하여 평가 서비스를 호출
 from core.startup import service_manager
@@ -12,7 +13,7 @@ class QueueEvent:
     session_id: str
     user_id: str
     seq: int
-    event_type: str  # "user", "assistant", "ended"
+    event_type: str  # "doctor", "patient", "ended"
     audio_path: Optional[str]
     text: Optional[str]
     timestamp: str
@@ -23,7 +24,7 @@ _worker_task: Optional[asyncio.Task] = None
 
 # 세션별 상태 추적: pending 이벤트 수와 종료 플래그
 _session_state: Dict[str, Dict[str, int | bool]] = {}
-
+logger = logging.getLogger(__name__)
 
 def _get_queue() -> asyncio.Queue:
     global _queue
@@ -45,12 +46,13 @@ async def enqueue_user_utterance(session_id: str, user_id: str, seq: int, audio_
             session_id=session_id,
             user_id=user_id,
             seq=seq,
-            event_type="user",
+            event_type="doctor",
             audio_path=audio_path,
             text=text,
             timestamp=datetime.utcnow().isoformat(),
         )
     )
+    logger.info(f"유저 발화 세션 큐 등록 = {session_id}, seq={seq}")
 
 
 async def enqueue_ai_utterance(session_id: str, user_id: str, seq: int, audio_path: Optional[str], text: str):
@@ -61,12 +63,13 @@ async def enqueue_ai_utterance(session_id: str, user_id: str, seq: int, audio_pa
             session_id=session_id,
             user_id=user_id,
             seq=seq,
-            event_type="assistant",
+            event_type="patient",
             audio_path=audio_path,
             text=text,
             timestamp=datetime.utcnow().isoformat(),
         )
     )
+    logger.info(f"AI 발화 세션 큐 등록 = {session_id}, seq={seq}")
 
 
 async def enqueue_conversation_ended(session_id: str, user_id: str, seq: int):
@@ -84,28 +87,29 @@ async def enqueue_conversation_ended(session_id: str, user_id: str, seq: int):
         )
     )
     _session_state[session_id]["ended"] = True
+    logger.info(f"대화 종료")
 
 
 async def _process_event(ev: QueueEvent):
-    """각 이벤트를 평가 서비스로 전달. assistant인 경우 SER 포함(add_conversation_entry 내부 수행).
+    """각 이벤트를 평가 서비스로 전달. patient인 경우 SER 포함(add_conversation_entry 내부 수행).
     처리 성공 시 pending 감소.
     """
     try:
-        if ev.event_type == "user":
+        if ev.event_type == "doctor":
             await service_manager.evaluation_service.add_conversation_entry(
                 session_id=ev.session_id,
                 audio_file_path=ev.audio_path or "",
                 text=ev.text or "",
-                speaker_role="user",
+                speaker_role="doctor",
             )
             _session_state[ev.session_id]["pending"] -= 1
 
-        elif ev.event_type == "assistant":
+        elif ev.event_type == "patient":
             await service_manager.evaluation_service.add_conversation_entry(
                 session_id=ev.session_id,
                 audio_file_path=ev.audio_path or "",
                 text=ev.text or "",
-                speaker_role="assistant",
+                speaker_role="patient",
             )
             _session_state[ev.session_id]["pending"] -= 1
 
@@ -114,9 +118,9 @@ async def _process_event(ev: QueueEvent):
             pass
 
     except Exception as e:
-        # 실패 시 pending 되돌림(assistant/user만), 재시도 전략은 추후 확장 가능
+        # 실패 시 pending 되돌림(patient/doctor만), 재시도 전략은 추후 확장 가능
         try:
-            if ev.event_type in ("user", "assistant"):
+            if ev.event_type in ("doctor", "patient"):
                 _session_state[ev.session_id]["pending"] = max(
                     0, int(_session_state[ev.session_id]["pending"]) - 1
                 )

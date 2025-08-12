@@ -98,8 +98,8 @@ class EvaluationService:
             timestamp = datetime.now()
             emotion_analysis = None
             
-            # 의사(assistant) 음성인 경우에만 감정 분석 수행
-            if speaker_role == "assistant":
+            # 의사(doctor) 음성인 경우에만 감정 분석 수행
+            if speaker_role == "doctor":
                 await self.load_emotion_model()  # 모델이 로드되지 않았다면 로드
                 
                 if self.emotion_model is not None:
@@ -117,14 +117,14 @@ class EvaluationService:
                 "timestamp": timestamp.isoformat(),
                 "text": text,
                 "emotion": emotion_analysis,
-                "speaker_role": speaker_role,  # "assistant" (의사) or "user" (환자)
-                # "audio_file_path": audio_file_path
+                "speaker_role": speaker_role,  # "doctor" (의사) or "patient" (환자)
+                "audio_file_path": audio_file_path
             }
             
             # 세션 데이터에 추가
             session = self.session_data[session_id]
             session["conversation_entries"].append(conversation_entry)
-            # session["audio_files"].append(audio_file_path)
+            session["audio_files"].append(audio_file_path)
             
             print(f"📝 [{session_id}] 대화 엔트리 추가: {speaker_role} - {text[:50]}...")
             
@@ -687,7 +687,7 @@ class EvaluationService:
         # 대화 로그에서 의사 발언만 추출
         doctor_messages = [
             msg for msg in state["conversation_log"] 
-            if msg.get("role") == "assistant" or msg.get("speaker") == "doctor"
+            if msg.get("role") == "doctor" or msg.get("speaker") == "doctor"
         ]
         
         conversation_analysis = {
@@ -783,8 +783,8 @@ class EvaluationService:
             return {"error": "분석할 대화 엔트리가 없습니다"}
         
         # 역할별 분리
-        doctor_entries = [entry for entry in conversation_entries if entry["speaker_role"] == "assistant"]
-        patient_entries = [entry for entry in conversation_entries if entry["speaker_role"] == "user"]
+        doctor_entries = [entry for entry in conversation_entries if entry["speaker_role"] == "doctor"]
+        patient_entries = [entry for entry in conversation_entries if entry["speaker_role"] == "patient"]
         
         # 감정 분석 통계 (의사 발언만)
         emotion_stats = {}
