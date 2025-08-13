@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core.config import get_db
 from core.models import User
 from routes.auth import get_current_user
-from services.langgraph_evaluation_service import LangGraphEvaluationService
+from services.evaluation_service import EvaluationService
 
 # API 라우터 생성
 router = APIRouter(prefix="/evaluation", tags=["CPX 평가"])
@@ -19,7 +19,6 @@ class EvaluationSummary(BaseModel):
     grade: str
     evaluation_date: str
     conversation_duration_minutes: float
-    total_interactions: int
 
 class DetailedEvaluationResponse(BaseModel):
     evaluation_metadata: Dict
@@ -34,8 +33,8 @@ class EvaluationListResponse(BaseModel):
     total_count: int
     average_score: float
 
-# 평가 서비스 인스턴스 (LangGraph 버전)
-evaluation_service = LangGraphEvaluationService()
+# 평가 서비스 인스턴스
+evaluation_service = EvaluationService()
 
 @router.get("/", summary="사용자의 평가 목록 조회", response_model=EvaluationListResponse)
 async def get_user_evaluations(

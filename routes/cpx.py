@@ -97,7 +97,6 @@ async def update_cpx_details_api(
     updated_details = await cpx_service.update_cpx_details(
         result_id=result_id,
         user_id=current_user.id,
-        conversation_transcript=details_data.conversation_transcript,
         memo=details_data.memo,
         system_evaluation_data=details_data.system_evaluation_data
     )
