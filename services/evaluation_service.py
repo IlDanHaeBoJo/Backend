@@ -418,8 +418,7 @@ class EvaluationService:
             "user_id": user_id,
             "scenario_id": scenario_id,
             "start_time": datetime.now(),
-            "interactions": [],  # 기존 방식 호환성 유지
-            "conversation_entries": [],  # 새로운 실시간 대화 데이터
+            "conversation_entries": [],  # 실시간 대화 데이터
             # "audio_files": [],  # 임시 저장된 wav 파일 경로들
             "status": "active"
         }
@@ -629,39 +628,9 @@ class EvaluationService:
             print(f"❌ 오디오 전처리 오류: {e}")
             return None
 
-    async def record_interaction(self, session_id: str, student_question: str, patient_response: str, 
-                               audio_file_path: str = None, interaction_type: str = "question"):
-        """학생-환자 상호작용 기록 (음성 파일 경로 포함)"""
-        if session_id not in self.session_data:
-            return
-        
-        interaction = {
-            "timestamp": datetime.now(),
-            "type": interaction_type,
-            "student_question": student_question,
-            "patient_response": patient_response,
-            "audio_file_path": audio_file_path,  # WAV 파일 경로 추가
-            "analysis": self._simple_analysis(student_question)
-        }
-        
-        self.session_data[session_id]["interactions"].append(interaction)
 
-    def _simple_analysis(self, question: str) -> Dict:
-        """간단한 질문 분석"""
-        score = 5.0  # 기본 점수
-        
-        # 긍정적 요소
-        if "안녕하세요" in question or "감사" in question:
-            score += 1.0
-        if any(word in question for word in ["언제", "어떤", "어디", "어떻게"]):
-            score += 1.0
-        if "?" in question:
-            score += 0.5
-            
-        return {
-            "communication_score": min(10.0, score),
-            "question_type": "개방형" if any(w in question for w in ["언제", "어떤", "어디"]) else "폐쇄형"
-        }
+
+
 
     async def end_evaluation_session(self, session_id: str) -> Dict:
         """평가 세션 종료 및 종합 평가 실행"""
@@ -733,24 +702,11 @@ class EvaluationService:
             "start_time": session["start_time"].isoformat(),
             "end_time": session["end_time"].isoformat(),
             "duration_minutes": (session["end_time"] - session["start_time"]).total_seconds() / 60,
-            "total_interactions": len(session["interactions"]),
             
             # 상세 분석 결과
             "langgraph_text_analysis": langgraph_analysis,  # LangGraph 기반 텍스트 평가 결과
             
-            # 인터랙션 상세 (기존 방식 - 호환성 유지)
-            "interactions": [
-                {
-                    "timestamp": interaction["timestamp"].isoformat(),
-                    "student_question": interaction["student_question"],
-                    "patient_response": interaction["patient_response"],
-                    "audio_file": interaction.get("audio_file_path"),
-                    "analysis": interaction["analysis"]
-                }
-                for interaction in session["interactions"]
-            ],
-            
-            # 새로운 실시간 대화 데이터 (감정 분석 포함)
+            # 실시간 대화 데이터 (감정 분석 포함)
             "conversation_entries": [
                 {
                     "timestamp": entry["timestamp"],
@@ -774,25 +730,6 @@ class EvaluationService:
             
             async with aiofiles.open(json_path, 'w', encoding='utf-8') as f:
                 await f.write(json.dumps(result, ensure_ascii=False, indent=2))
-            
-            # 대화 텍스트만 별도 저장
-            text_path = self.evaluation_dir / f"{session_id}_conversation.txt"
-            async with aiofiles.open(text_path, 'w', encoding='utf-8') as f:
-                await f.write(f"=== CPX 대화 기록 ===\n")
-                await f.write(f"사용자 ID: {result['user_id']}\n")
-                await f.write(f"시나리오 ID: {result['scenario_id']}\n")
-                await f.write(f"시작 시간: {result['start_time']}\n")
-                await f.write(f"종료 시간: {result['end_time']}\n")
-                await f.write(f"총 소요시간: {result['duration_minutes']:.1f}분\n\n")
-                
-                for i, interaction in enumerate(result['interactions'], 1):
-                    await f.write(f"--- 대화 {i} ---\n")
-                    await f.write(f"시간: {interaction['timestamp']}\n")
-                    await f.write(f"학생: {interaction['student_question']}\n")
-                    await f.write(f"환자: {interaction['patient_response']}\n")
-                    if interaction.get('audio_file'):
-                        await f.write(f"음성파일: {interaction['audio_file']}\n")
-                    await f.write("\n")
             
             print(f"💾 [{session_id}] 평가 결과 저장 완료: {json_path}")
             
@@ -949,7 +886,6 @@ class EvaluationService:
             "user_id": state["user_id"],
             "scenario_id": state["scenario_id"],
             "evaluation_date": datetime.now().isoformat(),
-            "total_interactions": len(state["conversation_log"]),
             "conversation_duration_minutes": len(state["conversation_log"]) * 0.5,
             "voice_recording_path": "s3로 저장",
             "conversation_transcript": json.dumps(state["conversation_log"], ensure_ascii=False)
