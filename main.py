@@ -68,10 +68,11 @@ app = FastAPI(
 # CORS 설정
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.FRONTEND_ORIGINS,  # 환경 변수에서 로드
+    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000", "*"],  # React 개발 서버 허용
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD"],
     allow_headers=["*"],
+    expose_headers=["*"]
 )
 
 # 라우터 등록

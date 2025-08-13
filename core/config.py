@@ -61,7 +61,7 @@ class Settings:
     DATABASE_URL: str = os.getenv("DATABASE_URL","")
 
     # CORS 설정
-    FRONTEND_ORIGINS: list[str] = os.getenv("FRONTEND_ORIGINS", "").split(",")
+    FRONTEND_ORIGINS: list[str] = os.getenv("FRONTEND_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000").split(",")
 
     # 이메일 설정
     MAIL_USERNAME: str = os.getenv("MAIL_USERNAME", "")
