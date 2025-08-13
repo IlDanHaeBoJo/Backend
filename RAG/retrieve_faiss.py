@@ -17,6 +17,10 @@ def load_faiss_index(index_path: str, model_name: str="intfloat/multilingual-e5-
     device = load_device()
     print(f"사용 중인 장치: {device}")
     embeddings = HuggingFaceEmbeddings(model_name=model_name, model_kwargs={"device": device})
+
+    vectorstore = FAISS.load_local(index_path, embeddings, allow_dangerous_deserialization=True)
+    print(f"총 문서 개수: {len(vectorstore.index_to_docstore_id.values())}")
+
     return FAISS.load_local(index_path, embeddings, allow_dangerous_deserialization=True)
 
 def retrieve_faiss_index(index_path: str, query: str, k: int=5, model_name: str="intfloat/multilingual-e5-large") -> list:
@@ -38,7 +42,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="FAISS 인덱스 검색 스크립트")
     parser.add_argument("--index_path", type=str, required=True, help="FAISS 인덱스 경로")
     parser.add_argument("--query", type=str, required=True, help="검색할 쿼리")
-    parser.add_argument("--k", type=int, default=5, help="검색 결과의 수")
+    parser.add_argument("--k", type=int, default=6, help="검색 결과의 수")
     parser.add_argument("--model_name", type=str, default="intfloat/multilingual-e5-large", help="사용할 모델 이름")
     args = parser.parse_args()
 
