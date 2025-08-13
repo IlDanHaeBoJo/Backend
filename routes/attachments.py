@@ -1,3 +1,4 @@
+import logging
 from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, Form
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List
@@ -7,6 +8,7 @@ from services.attachment_service import AttachmentService, AttachmentCreate
 from routes.auth import get_current_user
 from core.models import User
 from services.s3_service import s3_service
+from schemas.attachment_schemas import PresignedUrlRequest, PresignedUrlResponse, UploadCompleteRequest
 from utils.exceptions import (
     NoticeNotFoundException,
     AttachmentNotFoundException,
@@ -17,6 +19,8 @@ from utils.exceptions import (
     FileNotExistsException,
     PermissionDeniedException
 )
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/attachments", tags=["첨부파일"])
 
@@ -51,13 +55,10 @@ async def create_attachment(
     except Exception as e:
         raise HTTPException(status_code=500, detail="첨부파일 생성 중 오류가 발생했습니다.")
 
-@router.post("/upload-url/{notice_id}")
+@router.post("/upload-url/{notice_id}", response_model=PresignedUrlResponse)
 async def generate_upload_url(
     notice_id: int,
-    filename: str,
-    file_type: str,
-    file_size: int,
-    method: str = "PUT",  # PUT 또는 POST 선택
+    request: PresignedUrlRequest,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -69,8 +70,8 @@ async def generate_upload_url(
     
     try:
         # 파일 검증
-        attachment_service._validate_file_size(file_size)
-        attachment_service._validate_file_type(file_type)
+        attachment_service._validate_file_size(request.file_size)
+        attachment_service._validate_file_type(request.file_type)
         
         # 공지사항 존재 확인
         from services.notice_service import NoticeService
@@ -80,51 +81,51 @@ async def generate_upload_url(
             raise NoticeNotFoundException()
         
         # 고유한 S3 키 생성
-        s3_key = s3_service.generate_unique_key(filename)
-        logger.info(f"Presigned URL 생성 - Notice ID: {notice_id}, 파일명: {filename}, S3 키: {s3_key}")
+        s3_key = s3_service.generate_unique_key(request.filename)
+        logger.info(f"Presigned URL 생성 - Notice ID: {notice_id}, 파일명: {request.filename}, S3 키: {s3_key}")
         
         # 업로드 방식에 따라 URL 생성
-        if method.upper() == "POST":
+        if request.method.upper() == "POST":
             # Presigned POST URL 생성
-            presigned_post = s3_service.generate_presigned_post(s3_key, file_type)
+            presigned_post = s3_service.generate_presigned_post(s3_key, request.file_type)
             if not presigned_post:
                 raise S3UploadFailedException("Presigned POST URL 생성에 실패했습니다.")
             
             logger.info(f"Presigned POST URL 생성 완료 - S3 키: {s3_key}, 만료시간: {S3_PRESIGNED_URL_EXPIRES_IN}초")
             
-            return {
-                "notice_id": notice_id,
-                "original_filename": filename,
-                "stored_filename": s3_key,
-                "upload_method": "POST",
-                "upload_url": presigned_post['url'],
-                "upload_fields": presigned_post['fields'],
-                "file_type": file_type,
-                "file_size": file_size,
-                "expires_in": S3_PRESIGNED_URL_EXPIRES_IN,
-                "s3_url": s3_service.get_file_url(s3_key),
-                "message": "Presigned POST URL이 생성되었습니다. multipart/form-data로 파일을 업로드하세요."
-            }
+            return PresignedUrlResponse(
+                notice_id=notice_id,
+                original_filename=request.filename,
+                stored_filename=s3_key,
+                upload_method="POST",
+                upload_url=presigned_post['url'],
+                upload_fields=presigned_post['fields'],
+                file_type=request.file_type,
+                file_size=request.file_size,
+                expires_in=S3_PRESIGNED_URL_EXPIRES_IN,
+                s3_url=s3_service.get_file_url(s3_key),
+                message="Presigned POST URL이 생성되었습니다. multipart/form-data로 파일을 업로드하세요."
+            )
         else:
             # Presigned PUT URL 생성 (기본값)
-            upload_url = s3_service.get_upload_url_with_cors(s3_key, file_type)
+            upload_url = s3_service.get_upload_url_with_cors(s3_key, request.file_type)
             if not upload_url:
                 raise S3UploadFailedException("업로드 URL 생성에 실패했습니다.")
             
             logger.info(f"Presigned PUT URL 생성 완료 - S3 키: {s3_key}, 만료시간: {S3_PRESIGNED_URL_EXPIRES_IN}초")
             
-            return {
-                "notice_id": notice_id,
-                "original_filename": filename,
-                "stored_filename": s3_key,
-                "upload_method": "PUT",
-                "upload_url": upload_url,
-                "file_type": file_type,
-                "file_size": file_size,
-                "expires_in": S3_PRESIGNED_URL_EXPIRES_IN,
-                "s3_url": s3_service.get_file_url(s3_key),
-                "message": "업로드 URL이 생성되었습니다. 이 URL로 PUT 요청을 보내 파일을 업로드하세요."
-            }
+            return PresignedUrlResponse(
+                notice_id=notice_id,
+                original_filename=request.filename,
+                stored_filename=s3_key,
+                upload_method="PUT",
+                upload_url=upload_url,
+                file_type=request.file_type,
+                file_size=request.file_size,
+                expires_in=S3_PRESIGNED_URL_EXPIRES_IN,
+                s3_url=s3_service.get_file_url(s3_key),
+                message="업로드 URL이 생성되었습니다. 이 URL로 PUT 요청을 보내 파일을 업로드하세요."
+            )
         
     except (NoticeNotFoundException, FileSizeExceededException, UnsupportedFileTypeException, S3UploadFailedException) as e:
         raise e
@@ -134,7 +135,7 @@ async def generate_upload_url(
 @router.post("/upload-complete/{notice_id}")
 async def upload_complete(
     notice_id: int,
-    upload_data: dict,
+    upload_data: UploadCompleteRequest,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -145,10 +146,13 @@ async def upload_complete(
         raise PermissionDeniedException("첨부파일 업로드 완료 처리")
     
     try:
-        # S3 파일 존재 확인 (HeadObject)
-        s3_key = s3_service._extract_s3_key_from_url(upload_data["s3_url"])
-        logger.info(f"업로드 완료 처리 시작 - Notice ID: {notice_id}, 파일명: {upload_data['original_filename']}, S3 키: {s3_key}")
+        # S3 키 사용 (s3_url이 제공되지 않은 경우 기본 URL 생성)
+        s3_key = upload_data.s3_key
+        s3_url = upload_data.s3_url or s3_service.get_file_url(s3_key)
         
+        logger.info(f"업로드 완료 처리 시작 - Notice ID: {notice_id}, 파일명: {upload_data.original_filename}, S3 키: {s3_key}")
+        
+        # S3 파일 존재 확인 (HeadObject)
         if not s3_service.file_exists(s3_key):
             logger.error(f"S3 파일 존재 확인 실패 - S3 키: {s3_key}")
             raise HTTPException(status_code=404, detail="S3에서 업로드된 파일을 찾을 수 없습니다.")
@@ -156,17 +160,21 @@ async def upload_complete(
         logger.info(f"S3 파일 존재 확인 성공 - S3 키: {s3_key}")
         
         # ETag 확인 (선택사항)
-        if "etag" in upload_data:
-            logger.info(f"업로드 완료 - ETag: {upload_data['etag']}")
+        if upload_data.etag:
+            logger.info(f"업로드 완료 - ETag: {upload_data.etag}")
         
         # 첨부파일 정보 생성
+        attachment_data = AttachmentCreate(
+            original_filename=upload_data.original_filename,
+            s3_url=s3_url,
+            file_size=upload_data.file_size,
+            file_type=upload_data.file_type
+        )
+        
         attachment = await attachment_service.create_attachment(
             db, 
             notice_id, 
-            upload_data["original_filename"],
-            upload_data["s3_url"],
-            upload_data["file_size"],
-            upload_data["file_type"]
+            attachment_data
         )
         
         logger.info(f"첨부파일 DB 저장 완료 - Attachment ID: {attachment.attachment_id}, S3 키: {s3_key}")

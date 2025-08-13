@@ -1,189 +1,172 @@
 # Postman API 테스트 가이드
 
-## 서버 정보
-- **Base URL**: `http://localhost:8000`
-- **서버 상태**: 실행 중
+## Presigned URL 파일 업로드 플로우
 
-## 1. 사용자 인증 API
+### 1단계: Presigned URL 생성
 
-### 1.1 사용자 등록
+**Method:** `POST`  
+**URL:** `http://localhost:8000/attachments/upload-url/{notice_id}`
+
+**Headers:**
 ```
-POST /auth/register
+Authorization: Bearer {your_access_token}
 Content-Type: application/json
-
-{
-  "username": "professor@test.com",
-  "password": "testpassword123",
-  "email": "professor@test.com",
-  "name": "테스트 교수",
-  "role": "admin",
-  "major": "컴퓨터공학과"
-}
 ```
 
-### 1.2 로그인
-```
-POST /auth/login
-Content-Type: application/json
-
+**Body (JSON):**
+```json
 {
-  "username": "professor@test.com",
-  "password": "testpassword123"
+  "filename": "test.txt",
+  "file_type": "text/plain",
+  "file_size": 1024,
+  "method": "PUT"
 }
 ```
 
 **응답 예시:**
 ```json
 {
-  "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-  "token_type": "bearer",
-  "refresh_token": "refresh_token_here"
-}
-```
-
-## 2. 공지사항 API (관리자용)
-
-### 2.1 공지사항 생성
-```
-POST /admin/notices
-Authorization: Bearer {access_token}
-Content-Type: application/json
-
-{
-  "title": "첨부파일 테스트 공지사항",
-  "content": "이 공지사항은 첨부파일 API 테스트를 위한 것입니다.",
-  "important": false,
-  "author_id": 1
-}
-```
-
-### 2.2 공지사항 조회
-```
-GET /admin/notices/{notice_id}
-Authorization: Bearer {access_token}
-```
-
-### 2.3 공지사항 목록 조회
-```
-GET /admin/notices/
-Authorization: Bearer {access_token}
-```
-
-### 2.4 공지사항 삭제
-```
-DELETE /admin/notices/{notice_id}
-Authorization: Bearer {access_token}
-```
-
-## 3. 첨부파일 API
-
-### 3.1 파일 업로드 (S3)
-```
-POST /attachments/upload/{notice_id}
-Authorization: Bearer {access_token}
-Content-Type: multipart/form-data
-
-Body (form-data):
-- file: [파일 선택]
-```
-
-### 3.2 S3 URL로 첨부파일 생성
-```
-POST /attachments/create/{notice_id}
-Authorization: Bearer {access_token}
-Content-Type: application/json
-
-{
-  "original_filename": "test_document.pdf",
-  "s3_url": "https://cpx-attachments.s3.ap-northeast-2.amazonaws.com/attachments/uuid.pdf",
+  "notice_id": 11,
+  "original_filename": "test.txt",
+  "stored_filename": "attachments/uuid.txt",
+  "upload_method": "PUT",
+  "upload_url": "https://medicpx.s3.ap-northeast-2.amazonaws.com/attachments/uuid.txt?presigned_params...",
+  "file_type": "text/plain",
   "file_size": 1024,
-  "file_type": "application/pdf"
+  "expires_in": 3600,
+  "s3_url": "https://medicpx.s3.ap-northeast-2.amazonaws.com/attachments/uuid.txt",
+  "message": "업로드 URL이 생성되었습니다. 이 URL로 PUT 요청을 보내 파일을 업로드하세요."
 }
 ```
 
-### 3.3 첨부파일 목록 조회
-```
-GET /attachments/notice/{notice_id}
-```
+### 2단계: S3 직접 업로드
 
-### 3.4 첨부파일 정보 조회
-```
-GET /attachments/{attachment_id}/info
-```
+**Method:** `PUT`  
+**URL:** `{upload_url_from_step_1}`
 
-### 3.5 첨부파일 다운로드 URL 조회
+**Headers:**
 ```
-GET /attachments/download/{attachment_id}
+Content-Type: text/plain
+Content-Length: {file_size}
 ```
 
-### 3.6 첨부파일 삭제
+**Body:** 파일 내용 (raw)
+
+**응답:** 200 OK (ETag 헤더 포함)
+
+### 3단계: 업로드 완료 알림 (새로운 구조)
+
+**Method:** `POST`  
+**URL:** `http://localhost:8000/attachments/upload-complete/{notice_id}`
+
+**Headers:**
 ```
-DELETE /attachments/{attachment_id}
-Authorization: Bearer {access_token}
-```
-
-### 3.7 공지사항의 모든 첨부파일 삭제
-```
-DELETE /attachments/notice/{notice_id}/all
-Authorization: Bearer {access_token}
-```
-
-## 4. 테스트 시나리오
-
-### 시나리오 1: 기본 첨부파일 업로드
-1. 사용자 등록/로그인
-2. 공지사항 생성
-3. 파일 업로드
-4. 첨부파일 목록 조회
-5. 첨부파일 정보 조회
-6. 다운로드 URL 조회
-7. 첨부파일 삭제
-8. 공지사항 삭제
-
-### 시나리오 2: S3 URL 기반 첨부파일 생성
-1. 사용자 등록/로그인
-2. 공지사항 생성
-3. S3 URL로 첨부파일 생성
-4. 첨부파일 목록 조회
-5. 첨부파일 삭제
-6. 공지사항 삭제
-
-## 5. 환경 변수 설정
-
-Postman에서 다음 환경 변수를 설정하세요:
-
-```
-BASE_URL: http://localhost:8000
-ACCESS_TOKEN: (로그인 후 받은 토큰)
-NOTICE_ID: (생성된 공지사항 ID)
-ATTACHMENT_ID: (생성된 첨부파일 ID)
+Authorization: Bearer {your_access_token}
+Content-Type: application/json
 ```
 
-## 6. 주의사항
+**Body (JSON) - 새로운 구조:**
+```json
+{
+  "original_filename": "test.txt",
+  "s3_key": "attachments/uuid.txt",
+  "file_size": 1024,
+  "file_type": "text/plain",
+  "etag": "your-etag-from-s3",
+  "s3_url": "https://medicpx.s3.ap-northeast-2.amazonaws.com/attachments/uuid.txt"
+}
+```
 
-1. **권한**: 첨부파일 업로드/삭제는 `admin` 또는 `교수` 역할이 필요합니다.
-2. **파일 크기**: 최대 10MB까지 업로드 가능합니다.
-3. **파일 타입**: PDF, Word, Excel, PowerPoint, 이미지 파일 등이 지원됩니다.
-4. **S3 설정**: AWS S3 인증 정보가 필요합니다 (환경 변수에서 설정).
+**또는 s3_url 생략 가능:**
+```json
+{
+  "original_filename": "test.txt",
+  "s3_key": "attachments/uuid.txt",
+  "file_size": 1024,
+  "file_type": "text/plain",
+  "etag": "your-etag-from-s3"
+}
+```
 
-## 7. 지원되는 파일 타입
+**응답 예시:**
+```json
+{
+  "message": "업로드가 완료되었고 첨부파일이 성공적으로 저장되었습니다.",
+  "attachment_id": 1,
+  "original_filename": "test.txt",
+  "s3_url": "https://medicpx.s3.ap-northeast-2.amazonaws.com/attachments/uuid.txt",
+  "s3_key": "attachments/uuid.txt",
+  "verified": true
+}
+```
 
-- `application/pdf`
-- `application/msword`
-- `application/vnd.openxmlformats-officedocument.wordprocessingml.document`
-- `application/vnd.ms-excel`
-- `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`
-- `application/vnd.ms-powerpoint`
-- `application/vnd.openxmlformats-officedocument.presentationml.presentation`
-- `image/jpeg`
-- `image/png`
-- `image/gif`
-- `text/plain`
+## 주요 변경사항
 
-## 8. 에러 코드
+### 이전 구조:
+- `s3_url` 필수
+- URL에서 S3 키 추출
 
-- `400`: 잘못된 요청 (파일 크기 초과, 지원하지 않는 파일 타입)
-- `401`: 인증 실패
-- `403`: 권한 없음
-- `404`: 리소스를 찾을 수 없음
-- `500`: 서버 내부 오류
+### 새로운 구조:
+- `s3_key` 필수 (stored_filename)
+- `s3_url` 선택사항 (제공되지 않으면 자동 생성)
+- 더 명확하고 안전한 구조
+
+## Postman 설정 순서
+
+1. **1단계 요청 생성**
+   - Method: POST
+   - URL: `http://localhost:8000/attachments/upload-url/11`
+   - Headers: Authorization, Content-Type
+   - Body: JSON (위 예시 참조)
+
+2. **2단계 요청 생성**
+   - Method: PUT
+   - URL: 1단계에서 받은 `upload_url`
+   - Headers: Content-Type, Content-Length
+   - Body: Raw (파일 내용)
+
+3. **3단계 요청 생성**
+   - Method: POST
+   - URL: `http://localhost:8000/attachments/upload-complete/11`
+   - Headers: Authorization, Content-Type
+   - Body: JSON (새로운 구조)
+
+## 테스트 시나리오
+
+### 시나리오 1: s3_url 포함
+```json
+{
+  "original_filename": "test.txt",
+  "s3_key": "attachments/uuid.txt",
+  "file_size": 1024,
+  "file_type": "text/plain",
+  "etag": "abc123",
+  "s3_url": "https://medicpx.s3.ap-northeast-2.amazonaws.com/attachments/uuid.txt"
+}
+```
+
+### 시나리오 2: s3_url 생략 (자동 생성)
+```json
+{
+  "original_filename": "test.txt",
+  "s3_key": "attachments/uuid.txt",
+  "file_size": 1024,
+  "file_type": "text/plain",
+  "etag": "abc123"
+}
+```
+
+## 오류 처리
+
+### 422 Unprocessable Content
+- 필수 필드 누락 확인
+- JSON 형식 확인
+- Content-Type 헤더 확인
+
+### 404 Not Found
+- notice_id 존재 확인
+- S3 파일 존재 확인
+
+### 500 Internal Server Error
+- 서버 로그 확인
+- AWS 인증 정보 확인
