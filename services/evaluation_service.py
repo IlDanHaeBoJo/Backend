@@ -1453,33 +1453,29 @@ class EvaluationService:
             print(f"❌ 시나리오 키워드 추출 실패: {e}")
             return scenario_info
 
-    def _summarize_compare_conversation(self, conversation_log: List[Dict], state: CPXEvaluationState) -> str:
+    def _compare_conversation_with_medical_knowledge(self, conversation_log: List[Dict], state: CPXEvaluationState) -> str:
         """대화 로그를 요약"""
         try:
             conversation_text = self._build_conversation_text(conversation_log)
             scenario_num = state["scenario_id"]
             scenario_info = self.scenario_applicable_elements[scenario_num]["name"]
             
-            # 시나리오 정보에서 핵심 키워드 추출
             scenario_keywords = self._extract_scenario_keywords(scenario_info)
-
-            
-            # 핵심 키워드를 사용하여 의학 지식 검색
             medical_knowledge = self._retrieve_medical_knowledge(scenario_keywords)
             print(f"🔍 의학 지식 검색 완료: {scenario_keywords}")
 
             summary_prompt = f"""
-                당신은 의사와 환자 사이의 대화를 요약하는 대화 요약 도우미입니다.
+                당신은 의사와 환자 사이의 대화와 검색된 의학 지식 결과를 비교하는 비교 전문가야.
 
                 【학생-환자 대화】: {conversation_text}
                 【시나리오 정보】: {scenario_info}
+                【의학지식 검색 결과】 : {medical_knowledge}
 
-                반드시 다음 형식으로 대화를 요약하세요:
+                환자의 주요 증상과 의사가 수행한 질문들을 바탕으로 의학 지식 검색 결과와 의사의 진찰 결과나 치료 방안이 적절한지 비교 및 평가하세요:
                 1. 환자의 주요 증상
                 2. 의사가 수행한 주요 질문들
                 3. 의사의 진찰 결과
                 4. 의사의 치료 방안
-                5. 전체적인 대화의 특징
 
                 간결하고 명확하게 요약해주세요.
             """
