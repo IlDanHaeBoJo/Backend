@@ -12,7 +12,7 @@ try:
     from pathlib import Path
     
     json_path = "/home/ghdrnjs/Backend/RAG/cpx_html_json"
-    output_dir = "/home/ghdrnjs/Backend/RAG/medical_db"
+    output_dir = "/home/ghdrnjs/Backend/RAG/medical_rag_db"
     
     print("의료 FAISS 인덱스 생성 중...")
 

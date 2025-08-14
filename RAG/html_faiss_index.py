@@ -149,7 +149,7 @@ def chunk_symptom_section(symptom_name, elements, source_filename, chunk_size=80
             # 이전 섹션 내용이 있으면 청크로 저장
             if accumulated_content:
                 content_text = ' '.join(accumulated_content)
-                if content_text.strip():
+                if content_text.strip() and len(content_text.strip()) > 10:  # 최소 길이 확인
                     chunk = create_chunk(
                         content_text, symptom_name, current_section, 
                         current_heading, source_filename
@@ -173,12 +173,12 @@ def chunk_symptom_section(symptom_name, elements, source_filename, chunk_size=80
             
         elif element.name == 'p':
             text = element.get_text(strip=True)
-            if text:
+            if text and len(text.strip()) > 3:  # 너무 짧은 텍스트 제외
                 accumulated_content.append(text)
                 
         elif element.name == 'table':
             table_text = extract_table_content(element)
-            if table_text:
+            if table_text and len(table_text.strip()) > 5:  # 의미있는 테이블 내용만
                 accumulated_content.append(table_text)
         
         # 청크 크기 확인 후 분할
@@ -195,7 +195,7 @@ def chunk_symptom_section(symptom_name, elements, source_filename, chunk_size=80
     # 마지막 남은 내용 처리
     if accumulated_content:
         content_text = ' '.join(accumulated_content)
-        if content_text.strip():
+        if content_text.strip() and len(content_text.strip()) > 10:  # 최소 길이 확인
             chunk = create_chunk(
                 content_text, symptom_name, current_section,
                 current_heading, source_filename
@@ -266,6 +266,19 @@ def create_chunk(content, symptom_name, section_type, heading, source_filename):
     """청크와 메타데이터 생성"""
     # general 섹션은 제외
     if section_type == "general":
+        return None
+    
+    # 내용이 실제로 의미있는지 확인
+    content_clean = content.strip()
+    
+    # 제목만 있는 경우 필터링 (예: [기본 진찰 사항]만 있는 경우)
+    if re.match(r'^\[.*\]$', content_clean) or len(content_clean) < 10:
+        return None
+    
+    # 실제 내용이 없는 경우 필터링
+    # 제목 부분을 제외한 실제 내용 확인
+    content_without_title = re.sub(r'^\[.*?\]\s*', '', content_clean)
+    if not content_without_title.strip() or len(content_without_title.strip()) < 5:
         return None
         
     if heading.startswith("STEP 1"):
@@ -360,13 +373,13 @@ def build_medical_faiss_index(html_files_dir, index_path, model_name="intfloat/m
 if __name__ == "__main__":
     # 실제 JSON 파일로 테스트
     try:
-        with open("/home/ghdrnjs/Backend/RAG/chunk_181-210.json", 'r', encoding='utf-8') as f:
+        with open("/home/ghdrnjs/Backend/RAG/cpx_html_json/chunk_241-270.json", 'r', encoding='utf-8') as f:
             data = json.load(f)
         
         html_content = data['content']['html']
         
         # 청크 생성 테스트
-        chunks = chunk_medical_html(html_content, "chunk_181-210")
+        chunks = chunk_medical_html(html_content, "chunk_241-270")
         
         print("=== 청크 생성 결과 ===")
         
@@ -383,15 +396,14 @@ if __name__ == "__main__":
         for symptom, count in symptoms.items():
             print(f"  {symptom}: {count}개")
             
-        print(f"\n처음 3개 청크 예시:")
         if chunks:
-            for i, chunk in enumerate(chunks[:3]):  # 처음 3개만 출력
+            for i, chunk in enumerate(chunks):  # 처음 3개만 출력
                 print(f"\n--- 청크 {i+1} ---")
                 print(f"  증상: {chunk['metadata']['symptom']}")
                 print(f"  섹션: {chunk['metadata']['section_type']}")
                 print(f"  제목: {chunk['metadata']['section_title']}")
                 print(f"  내용: {chunk['content'][:200]}...")
-            
+        
     except Exception as e:
         print(f"테스트 오류: {e}")
         import traceback
