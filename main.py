@@ -19,7 +19,7 @@ from fastapi.staticfiles import StaticFiles
 
 from core.config import settings
 from core.startup import service_manager
-from routes import admin_notices, api, student_notices, websocket, auth, cpx, user_management # user_management 라우터 추가
+from routes import admin_notices, api, student_notices, websocket, auth, cpx, attachments, user_management 
 
 logger = logging.getLogger(__name__)
 
@@ -68,10 +68,11 @@ app = FastAPI(
 # CORS 설정
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.FRONTEND_ORIGINS,  # 환경 변수에서 로드
+    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000", "*"],  # React 개발 서버 허용
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD"],
     allow_headers=["*"],
+    expose_headers=["*"]
 )
 
 # 라우터 등록
@@ -82,6 +83,7 @@ app.include_router(cpx.router) # CPX 학생용 라우터 포함
 app.include_router(cpx.admin_router) # CPX 관리자용 라우터 포함
 app.include_router(admin_notices.router, tags=["관리자용 공지사항"])
 app.include_router(student_notices.router, tags=["학생용 공지사항"])
+app.include_router(attachments.router, tags=["첨부파일"])
 app.include_router(user_management.router) # 사용자 관리 라우터 추가
 
 # TTS 오디오 파일 서빙 (캐시 디렉토리에서)

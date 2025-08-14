@@ -31,6 +31,12 @@ class Settings:
     # Google Cloud 설정
     GOOGLE_APPLICATION_CREDENTIALS: str = os.getenv("GOOGLE_APPLICATION_CREDENTIALS", "")
     GOOGLE_CLOUD_PROJECT: str = os.getenv("GOOGLE_CLOUD_PROJECT", "")
+
+    #Amazon S3설정  
+    AWS_ACCESS_KEY_ID: str = os.getenv("AWS_ACCESS_KEY_ID", "")
+    AWS_SECRET_ACCESS_KEY: str = os.getenv("AWS_SECRET_ACCESS_KEY", "")
+    AWS_REGION: str = os.getenv("AWS_REGION", "ap-northeast-2")
+    S3_BUCKET_NAME: str = os.getenv("S3_BUCKET_NAME", "medicpx")    
     
     # ChromaDB 설정
     CHROMA_PERSIST_DIRECTORY: str = os.getenv("CHROMA_PERSIST_DIRECTORY", "./chroma_db")
@@ -55,7 +61,7 @@ class Settings:
     DATABASE_URL: str = os.getenv("DATABASE_URL","")
 
     # CORS 설정
-    FRONTEND_ORIGINS: list[str] = os.getenv("FRONTEND_ORIGINS", "").split(",")
+    FRONTEND_ORIGINS: list[str] = os.getenv("FRONTEND_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000").split(",")
 
     # 이메일 설정
     MAIL_USERNAME: str = os.getenv("MAIL_USERNAME", "")

@@ -45,13 +45,13 @@ class Notices(Base):
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), comment='공지사항 마지막 업데이트 시간')
 
     author = relationship("User", back_populates="notices")
-    attachments = relationship("Attachments", back_populates="notice")
+    attachments = relationship("Attachments", back_populates="notice", cascade="all, delete-orphan")
 
 class Attachments(Base):
     __tablename__ = "attachments"
 
     attachment_id = Column(Integer, primary_key=True, index=True, comment='첨부파일 고유 식별자')
-    notice_id = Column(Integer, ForeignKey("notices.notice_id"), nullable=False, comment='어떤 공지사항에 속한 파일인지 나타내는 외래 키')
+    notice_id = Column(Integer, ForeignKey("notices.notice_id", ondelete="CASCADE"), nullable=False, comment='어떤 공지사항에 속한 파일인지 나타내는 외래 키')
     original_filename = Column(String(255), nullable=False, comment='사용자가 업로드한 원본 파일명')
     stored_filename = Column(String(255), unique=True, nullable=False, comment='서버에 저장된 실제 파일명 (중복 방지를 위한 UUID 등 사용)')
     file_path = Column(String(500), nullable=False, comment='서버 내 파일의 저장 경로 (예: /uploads/notices/)')
