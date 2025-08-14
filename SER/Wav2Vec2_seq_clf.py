@@ -1,7 +1,13 @@
 import torch
 import torch.nn as nn
+from torch.nn import functional as F
 from transformers import Wav2Vec2ForSequenceClassification
-from adversary import ContentAdversary 
+from adversary import ContentAdversary, SpeakerAdversary, AttentivePool
+import json
+
+with open('char_to_id.json', 'r', encoding='utf-8') as f:
+    CHAR2ID = json.load(f)
+    CTC_BLANK_ID = CHAR2ID["<ctc_blank>"]
 
 class custom_Wav2Vec2ForEmotionClassification(Wav2Vec2ForSequenceClassification):
     def __init__(self, config):
@@ -10,6 +16,13 @@ class custom_Wav2Vec2ForEmotionClassification(Wav2Vec2ForSequenceClassification)
             input_size=config.hidden_size, 
             num_chars=config.char_vocab_size 
         )
+        self.speaker_adversary = SpeakerAdversary(
+            input_size = config.hidden_size,
+            num_speakers = config.num_speakers
+        )
+        self.pooler = AttentivePool(config.hidden_size)
+        self.stats_projector = nn.Linear(2 * config.hidden_size,  # 2D -> D
+                                   config.hidden_size)
 
     def forward(
         self,
@@ -20,7 +33,8 @@ class custom_Wav2Vec2ForEmotionClassification(Wav2Vec2ForSequenceClassification)
         labels=None,
         content_labels=None, 
         content_labels_lengths=None,
-        adv_lambda=1.0, 
+        adv_lambda=1.0,
+        speaker_ids=None,
     ):
         outputs = self.wav2vec2(
             input_values,
@@ -33,13 +47,17 @@ class custom_Wav2Vec2ForEmotionClassification(Wav2Vec2ForSequenceClassification)
         hidden_states = outputs.last_hidden_state
 
         # 1. 감정 분류
-        pooled_output = torch.mean(hidden_states, dim=1)
-        if hasattr(self, 'projector'):
-            pooled_output = self.projector(pooled_output)
+        # pooled_output = torch.mean(hidden_states, dim=1)
+        # if hasattr(self, 'projector'):
+        #     pooled_output = self.projector(pooled_output)
+        pooled_output = self.pooler(hidden_states)
+        pooled_output = self.stats_projector(pooled_output)
+        pooled_output = self.projector(pooled_output)
         emotion_logits = self.classifier(pooled_output)
 
         # 2. 내용 분류 (적대자)
         adversary_logits = self.adversary(hidden_states, adv_lambda)
+        spk_logits = self.speaker_adversary(hidden_states, adv_lambda)
 
         loss = None
         if labels is not None and content_labels is not None:
@@ -48,7 +66,7 @@ class custom_Wav2Vec2ForEmotionClassification(Wav2Vec2ForSequenceClassification)
             loss_emotion = loss_emotion_fct(emotion_logits.view(-1, self.config.num_labels), labels.view(-1))
             
             # CTCLoss 사용
-            loss_adversary_fct = nn.CTCLoss(blank=0, reduction='mean', zero_infinity=True)
+            loss_adversary_fct = nn.CTCLoss(blank=CTC_BLANK_ID, reduction='mean', zero_infinity=True)
             
             log_probs = nn.functional.log_softmax(adversary_logits, dim=-1).transpose(0, 1)
             
@@ -71,7 +89,11 @@ class custom_Wav2Vec2ForEmotionClassification(Wav2Vec2ForSequenceClassification)
                 content_labels_lengths
             )
             
-            loss = loss_emotion + loss_adversary
+            loss = loss_emotion + adv_lambda * loss_adversary
+
+            if speaker_ids is not None:
+                loss_spk = F.cross_entropy(spk_logits, speaker_ids)
+                loss += adv_lambda * loss_spk
 
         return {
             "loss": loss,
