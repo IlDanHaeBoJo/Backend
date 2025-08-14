@@ -1,5 +1,7 @@
 import os
+import json
 from typing import Dict, List
+from pathlib import Path
 
 from langchain.chat_models import ChatOpenAI
 from langchain.schema import HumanMessage, SystemMessage
@@ -25,21 +27,104 @@ class LLMService:
         # 공통 기본 프롬프트
         self.base_prompt = self._get_base_cpx_prompt()
 
-        # 사용 가능한 시나리오들 (케이스별 고유 정보만)
-        self.scenarios = {
-            "1": {
-                "name": "흉통 케이스 (김철수, 45세 남성)",
-                "case_info": self._get_chest_pain_case_info()
-            },
-            "2": {
-                "name": "복통 케이스 (박영희, 32세 여성)",
-                "case_info": self._get_abdominal_pain_case_info()
-            },
-            "3": {
-                "name": "신경과 치매 케이스 (나몰라, 63세 남성)",
-                "case_info": self._get_neurology_dementia_case_info()
-            }
+        # 시나리오 JSON 파일 로드
+        self.scenario_data = self._load_scenario_json()
+
+    def _load_scenario_json(self) -> Dict:
+        """시나리오 JSON 파일 로드"""
+        try:
+            scenario_path = Path("scenarios/neurology_dementia_case.json")
+            with open(scenario_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            print(f"✅ 시나리오 로드 완료: {data.get('scenario_info', {}).get('patient_name', 'Unknown')}")
+            return data
+        except Exception as e:
+            print(f"❌ 시나리오 로드 실패: {e}")
+            return {}
+
+    def _convert_scenario_to_prompt(self, scenario_data: Dict) -> str:
+        """시나리오 데이터를 LLM 프롬프트로 변환 - 모든 정보 포함"""
+        if not scenario_data:
+            return "시나리오 정보를 불러올 수 없습니다."
+        
+        scenario_info = scenario_data.get("scenario_info", {})
+        history_taking = scenario_data.get("history_taking", {})
+        physical_examination = scenario_data.get("physical_examination", {})
+        patient_education = scenario_data.get("patient_education", {})
+        
+        prompt_parts = []
+        
+        # 환자 기본 정보
+        prompt_parts.append("【환자 기본 정보】")
+        prompt_parts.append(f"당신은 표준화 환자 \"{scenario_info.get('patient_name', 'Unknown')}\"입니다.")
+        prompt_parts.append(f"- {scenario_info.get('case_presentation', '')}")
+        prompt_parts.append(f"- Vital signs: {scenario_info.get('vital_signs', '')}")
+        prompt_parts.append(f"- 주요 진단: {scenario_info.get('primary_diagnosis', '')}")
+        
+        # 감별 진단
+        diff_diagnoses = scenario_info.get("differential_diagnoses", [])
+        if diff_diagnoses:
+            prompt_parts.append(f"- 감별진단: {', '.join(diff_diagnoses)}")
+        
+        # 병력 청취 정보 (모든 카테고리)
+        prompt_parts.append("\n【병력 청취 정보】")
+        history_labels = {
+            "O_onset": "발병 시기/경과",
+            "L_location": "위치",
+            "D_duration": "지속 시간/패턴",
+            "Co_course": "경과/변화",
+            "Ex_experience": "과거 경험/가족력",
+            "C_character": "증상 특징",
+            "A_associated": "동반 증상",
+            "F_factor": "악화/완화 요인",
+            "E_exam": "기존 검사/진단",
+            "trauma_history": "외상력",
+            "past_medical_history": "과거 병력",
+            "medication_history": "복용 약물",
+            "family_history": "가족력",
+            "social_history": "사회력",
+            "gynecologic_history": "산부인과력"
         }
+        
+        for key, label in history_labels.items():
+            if key in history_taking and history_taking[key]:
+                prompt_parts.append(f"- {label}: {history_taking[key]}")
+        
+        # 신체 검사 정보
+        prompt_parts.append("\n【신체 검사 정보】")
+        for key, value in physical_examination.items():
+            prompt_parts.append(f"- {key}: {value}")
+        
+        # 환자 교육 정보
+        prompt_parts.append("\n【환자 교육 관련 정보】")
+        if isinstance(patient_education, dict):
+            for key, value in patient_education.items():
+                prompt_parts.append(f"- {key}: {value}")
+        else:
+            prompt_parts.append(f"- 교육 내용: {patient_education}")
+        
+        # 환자 역할 지침
+        prompt_parts.append("\n【환자 역할 지침】")
+        prompt_parts.append("⚠️ **중요: 위 정보를 바탕으로 환자 역할을 하되, 90%는 질문에만 간단히 답하고 10%만 추가 설명을 제공하세요**")
+        prompt_parts.append("")
+        prompt_parts.append("✅ **간결한 답변 스타일 (90%)**:")
+        prompt_parts.append('- "자꾸 깜빡깜빡하는 것 같아요"')
+        prompt_parts.append('- "한 6개월 전부터 그런 것 같습니다"')
+        prompt_parts.append('- "그런 건 없는 것 같습니다"')
+        prompt_parts.append('- "마트에 물건을 사러 갔는데 뭘 사러 갔는지 잘 생각이 안 나고요"')
+        prompt_parts.append("")
+        prompt_parts.append("📝 **가끔 추가 설명 (10%)**:")
+        prompt_parts.append('- 의사가 "편하게 얘기해보세요"라고 할 때만 자세히 설명')
+        prompt_parts.append("- 같은 질문을 반복할 때 조금 더 구체적으로 답변")
+        prompt_parts.append("- 중요한 증상에 대해서는 2-3개의 예시 제공")
+        prompt_parts.append("")
+        prompt_parts.append("🎭 **말하는 성격**:")
+        prompt_parts.append("- 치매 걱정이 있는 63세 남성")
+        prompt_parts.append("- 침착하고 성실하지만 **말수가 적음**")
+        prompt_parts.append("- 묻는 것에만 답하는 스타일")
+        prompt_parts.append("- 불필요한 추가 정보는 제공하지 마세요")
+        
+        return "\n".join(prompt_parts)
 
     def _get_or_create_user_state(self, user_id: str) -> Dict:
         """사용자 상태 가져오기 또는 생성 (일반적인 패턴)"""
@@ -53,23 +138,38 @@ class LLMService:
 
     def select_scenario(self, scenario_id: str, user_id: str) -> bool:
         """사용자별 시나리오 선택하고 LLM 프롬프트 고정"""
-        if scenario_id in self.scenarios:
-            user_state = self._get_or_create_user_state(user_id)
-            user_state['scenario'] = scenario_id
-            
-            # 공통 프롬프트 + 케이스별 정보 조합
-            case_info = self.scenarios[scenario_id]["case_info"]
-            user_state['system_prompt'] = self.base_prompt + "\n\n" + case_info
-            
-            print(f"✅ [{user_id}] 시나리오 선택: {self.scenarios[scenario_id]['name']}")
-            return True
-        else:
-            print(f"❌ [{user_id}] 존재하지 않는 시나리오: {scenario_id}")
+        if not self.scenario_data:
+            print(f"❌ [{user_id}] 시나리오 데이터가 로드되지 않았습니다.")
             return False
+            
+        # 현재는 하나의 시나리오만 지원 (scenario_id "1")
+        expected_id = self.scenario_data.get("scenario_info", {}).get("scenario_id", "1")
+        if scenario_id != expected_id:
+            print(f"❌ [{user_id}] 지원하지 않는 시나리오: {scenario_id} (사용 가능: {expected_id})")
+            return False
+            
+        user_state = self._get_or_create_user_state(user_id)
+        user_state['scenario'] = scenario_id
+        
+        # 공통 프롬프트 + 시나리오 정보 조합
+        case_info = self._convert_scenario_to_prompt(self.scenario_data)
+        user_state['system_prompt'] = self.base_prompt + "\n\n" + case_info
+        
+        patient_name = self.scenario_data.get("scenario_info", {}).get("patient_name", "Unknown")
+        print(f"✅ [{user_id}] 시나리오 선택: {patient_name} 케이스")
+        return True
 
     def get_available_scenarios(self) -> Dict[str, str]:
         """사용 가능한 시나리오 목록 반환"""
-        return {k: v["name"] for k, v in self.scenarios.items()}
+        if not self.scenario_data:
+            return {}
+        
+        scenario_info = self.scenario_data.get("scenario_info", {})
+        scenario_id = scenario_info.get("scenario_id", "1")
+        patient_name = scenario_info.get("patient_name", "Unknown")
+        case_presentation = scenario_info.get("case_presentation", "")
+        
+        return {scenario_id: f"{patient_name} - {case_presentation}"}
 
     def _get_base_cpx_prompt(self) -> str:
         """CPX 공통 기본 프롬프트"""
@@ -102,123 +202,7 @@ class LLMService:
 의사가 아닌 환자 역할만 하세요!
 """
 
-    def _get_chest_pain_case_info(self) -> str:
-        """흉통 케이스 고유 정보 (김철수)"""
-        return """
-【환자 정보】
-당신은 표준화 환자 "김철수"입니다.
-- 이름: 김철수 (45세, 남성)
-- 주증상: 가슴 왼쪽 압박감과 통증 (3일 전부터)
-- 성격: 스트레스 많은 회사 중간관리직, 건강에 무관심했던 전형적 중년남성
 
-【증상 특징】
-- 가슴 왼쪽이 조이는 듯한 압박감
-- 운동이나 계단 오르면 악화, 쉬면 좋아짐
-- 목과 왼쪽 어깨로 퍼지는 통증
-- 가끔 식은땀, 숨차는 느낌
-- 통증 강도: 10점 중 6-7점
-- 지속시간: 각 에피소드마다 5-10분 정도
-
-【배경 정보】
-- 고혈압 진단 5년 전 (현재 약물 복용 중)
-- 흡연: 1갑/일 × 20년 (금연 시도 중)
-- 아버지가 심근경색으로 60세에 돌아가심
-- 회사 스트레스 많음, 불규칙한 생활
-- 음주: 주 2-3회, 소주 1병 정도
-
-【이 환자의 말하는 특징】
-- 전형적인 중년 남성의 말투와 태도
-- 스트레스와 업무 부담을 많이 받는 직장인의 특징
-- 건강 관리에 소홀했던 것에 대한 후회와 불안감
-"""
-
-    def _get_abdominal_pain_case_info(self) -> str:
-        """복통 케이스 고유 정보 (박영희)"""
-        return """
-【환자 정보】
-당신은 표준화 환자 "박영희"입니다.
-- 이름: 박영희 (32세, 여성)
-- 주증상: 오른쪽 윗배 통증 (2일 전부터)
-- 성격: 젊은 직장 여성, 평소 건강했어서 현재 상황에 놀라고 있음
-
-【증상 특징】
-- 오른쪽 윗배 (우상복부) 심한 통증
-- 치킨 먹은 후 시작됨 (2일 전 저녁)
-- 등쪽으로 퍼지는 통증
-- 기름진 음식 먹으면 악화
-- 통증 강도: 10점 중 7-8점
-- 구토 2-3차례 (어제 밤)
-- 열감은 없음, 식욕 완전 없어짐
-
-【배경 정보】
-- 특별한 병력 없음 (평소 건강했음)
-- 평소 기름진 음식 좋아함
-- 다이어트로 불규칙한 식사 패턴
-- 가족력: 어머니 담석증
-- 직업: 회사원 (사무직)
-- 음주: 주 1-2회 적당히, 흡연: 안 함
-
-【이 환자의 말하는 특징】
-- 젊은 여성답게 감정 표현이 솔직함
-- 평소 건강했던 사람의 당황스러움과 걱정
-- 통증으로 인한 불편함을 솔직하게 표현
-"""
-
-    def _get_neurology_dementia_case_info(self) -> str:
-        """신경과 치매 케이스 고유 정보 (나몰라)"""
-        return """
-【환자 정보】
-당신은 표준화 환자 "나몰라"입니다.
-- 이름: 나몰라 (63세, 남성)
-- 등록번호: 1234567
-- 주증상: 6개월 전부터 기억력 저하 ("자꾸 깜빡깜빡하는 것 같아요")
-- 성격: 치매에 대한 걱정이 많은 중년 남성, 가족력으로 인한 불안감
-
-【증상 특징】
-✅ 있는 증상들:
-- 기억력 저하: 마트에서 구매 목적 잊어버림, 사람들과의 약속 가끔 망각
-- 최근 기억 문제: 최근 일들 기억 어려움 (옛날 일은 비교적 잘 기억)
-- 단어 찾기 어려움: 물건 이름이 생각나지 않음 (언어 유창성은 정상)
-- 증상 시작: 6개월 전부터
-
-❌ 없는 증상들:
-- 성격 변화, 행동 변화: 없음
-- 길 잃어버림, 방향감각 상실: 없음  
-- 계산 능력 저하: 없음 (돈 계산 등 정상)
-- 일상생활 장애: 실질적인 큰 문제 없음
-- 환각, 이상행동, 망상: 없음
-- 파킨슨 증상 (손떨림, 보행장애): 없음
-- 소변조절 문제: 없음
-
-【배경 정보】
-- 치매 가족력: 할아버지가 60대부터 치매 발병, 80대에 사망 (말기에는 가족 인식 불가)
-- 기존 질환: 고혈압 (3년 전 진단, 현재 약물 복용 중)
-- 정신과적 문제: 우울증 없음 (약물 복용 안함)
-- 스트레스 요인: 최근 자녀 문제로 스트레스
-- 음주: 주 1-2회 정도 (모임 시 적당량)
-- 식습관: 정상적
-- 외상력: 없음 (머리 외상, 뇌질환 병력 없음)
-
-【이 환자의 말하는 특징】
-⚠️ **중요: 90%는 질문에만 간단히 답하고, 10%만 추가 설명을 제공하세요**
-
-✅ **간결한 답변 (90% 비율)**:
-- "자꾸 깜빡깜빡하는 것 같아요"
-- "한 6개월 전부터 그런 것 같습니다"
-- "그런 건 없는 것 같습니다"
-- "네, 그런 것도 없습니다"
-- "마트에 물건을 사러 갔는데 뭘 사러 갔는지 잘 생각이 안 나고요"
-
-📝 **가끔 추가 설명 (10% 비율)**:
-- 의사가 "편하게 얘기해보세요"라고 할 때만 자세히 설명
-- 같은 질문을 반복할 때 조금 더 구체적으로 답변
-- 중요한 증상에 대해서는 2-3개의 예시 제공
-
-🎭 **말하는 성격**:
-- 치매 걱정이 있는 63세 남성
-- 침착하고 성실하지만 **말수가 적음**
-- 묻는 것에만 답하는 스타일
-"""
 
     async def generate_response(self, user_input: str, user_id: str = "default") -> dict:
         """사용자 입력에 대한 AI 응답 생성 (사용자별 상태 관리)"""
@@ -332,5 +316,10 @@ class LLMService:
             return "대화 내역이 없습니다."
 
         count = len(user_state['memories'])
-        scenario_name = self.scenarios[user_state['scenario']]["name"] if user_state['scenario'] else "시나리오 미선택"
+        if user_state['scenario'] and self.scenario_data:
+            patient_name = self.scenario_data.get("scenario_info", {}).get("patient_name", "Unknown")
+            scenario_name = f"{patient_name} 케이스"
+        else:
+            scenario_name = "시나리오 미선택"
         return f"현재 시나리오: {scenario_name}\n총 {count}번의 대화가 있었습니다."
+
