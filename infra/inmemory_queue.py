@@ -1,6 +1,6 @@
 import asyncio
 from dataclasses import dataclass
-from typing import Optional, Dict
+from typing import Optional, Dict, Union
 from datetime import datetime
 import logging
 
@@ -23,7 +23,7 @@ _queue: Optional[asyncio.Queue] = None
 _worker_task: Optional[asyncio.Task] = None
 
 # 세션별 상태 추적: pending 이벤트 수와 종료 플래그
-_session_state: Dict[str, Dict[str, int | bool]] = {}
+_session_state: Dict[str, Dict[str, Union[int, bool]]] = {}
 logger = logging.getLogger(__name__)
 
 def _get_queue() -> asyncio.Queue:
