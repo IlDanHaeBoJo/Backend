@@ -27,9 +27,8 @@ class CpxEvaluationResponse(CpxEvaluationBase):
 
 # CpxDetails 스키마
 class CpxDetailsBase(BaseModel):
-    conversation_transcript: Optional[str] = Field(None, description="실습 대화 내용 전문")
     memo: Optional[str] = Field(None, description="실습 중 작성한 메모")
-    system_evaluation_data: Optional[str] = Field(None, description="시스템이 자동으로 기록한 평가 데이터")
+    system_evaluation_data: Optional[dict] = Field(None, description="CPX 실습에 대한 AI 평가 결과 및 상세 데이터")
 
 class CpxDetailsUpdate(CpxDetailsBase):
     pass

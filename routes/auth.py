@@ -24,15 +24,17 @@ from services.user_service import (
     send_verification_email, # send_verification_email 임포트 추가
     verify_code, # verify_code 임포트 추가
     verify_password,
+    refresh_tokens_db,
+    verification_codes_db # verification_codes_db 임포트 추가
+)
+from schemas.user_schemas import ( # schemas/user_schemas.py에서 스키마 임포트
     UserCreateSchema,
     UserLoginSchema,
     UserDeleteSchema,
-    PasswordChangeSchema, # PasswordChangeSchema 임포트 추가
-    ForgotPasswordRequestSchema, # ForgotPasswordRequestSchema 임포트 추가
-    VerifyCodeRequestSchema, # VerifyCodeRequestSchema 임포트 추가
-    UserResponseSchema, # UserResponseSchema 임포트 추가
-    refresh_tokens_db,
-    verification_codes_db # verification_codes_db 임포트 추가
+    PasswordChangeSchema,
+    ForgotPasswordRequestSchema,
+    VerifyCodeRequestSchema,
+    UserResponseSchema
 )
 from core.config import settings, get_db
 from core.models import User
@@ -202,27 +204,6 @@ async def delete_account(
         )
     
     return {"message": "Account deleted successfully"}
-
-@router.get("/me", summary="현재 사용자 정보 가져오기 (보호된 라우트)", response_model=UserResponseSchema) # response_model 변경
-async def read_users_me(
-    current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db)
-):
-    user = await get_user_by_username(db, current_user.username)
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
-        )
-
-    return UserResponseSchema(
-        id=user.id,
-        username=user.username,
-        email=user.user_detail.email if user.user_detail else None,
-        name=user.user_detail.name if user.user_detail else None,
-        role=user.role,
-        student_id=user.user_detail.student_id if user.user_detail else None,
-        major=user.user_detail.major if user.user_detail else None
-    )
 
 @router.post("/request-password-reset", summary="비밀번호 재설정 요청 (본인 확인 코드 전송)")
 async def request_password_reset(

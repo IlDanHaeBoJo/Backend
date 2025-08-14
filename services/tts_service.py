@@ -6,9 +6,6 @@ from google.cloud import texttospeech
 class TTSService:
     def __init__(self):
         """TTS 서비스 초기화"""
-        self.output_dir = Path("static/audio")
-        self.output_dir.mkdir(parents=True, exist_ok=True)
-
         self.cache_dir = Path("cache/tts")
         self.cache_dir.mkdir(parents=True, exist_ok=True)
 
@@ -31,13 +28,9 @@ class TTSService:
         # 캐시 확인
         cache_key = hashlib.md5(text.encode()).hexdigest()
         cache_path = self.cache_dir / f"tts_{cache_key}.mp3"
-        output_path = self.output_dir / f"tts_{cache_key}.mp3"
 
         if cache_path.exists():
-            # 캐시에서 복사
-            with open(cache_path, 'rb') as src, open(output_path, 'wb') as dst:
-                dst.write(src.read())
-            return str(output_path)
+            return str(cache_path)
 
         # Google TTS 생성
         synthesis_input = texttospeech.SynthesisInput(text=text)
@@ -47,10 +40,8 @@ class TTSService:
             audio_config=self.audio_config
         )
 
-        # 저장
+        # 캐시에만 저장
         with open(cache_path, 'wb') as f:
             f.write(response.audio_content)
-        with open(output_path, 'wb') as f:
-            f.write(response.audio_content)
 
-        return str(output_path)
+        return str(cache_path)

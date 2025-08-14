@@ -47,3 +47,33 @@ class ContentAdversary(nn.Module):
         logits = self.linear2(x) # (batch, seq_len, num_chars)
         
         return logits
+
+class SpeakerAdversary(nn.Module):
+    def __init__(self, input_size, num_speakers, hidden=256):
+        super().__init__()
+        self.grl = GradientReversalLayer.apply
+        self.net = nn.Sequential(
+            nn.LayerNorm(input_size),
+            nn.Linear(input_size, hidden), nn.ReLU(),
+            nn.Linear(hidden, num_speakers)
+        )
+    def forward(self, hidden_states, lambda_):
+        # frame-level -> utterance-level pooling
+        x = hidden_states.mean(dim=1)
+        x = self.grl(x, lambda_)
+        return self.net(x)
+
+class AttentivePool(nn.Module):
+    def __init__(self, dim, hidden=256):
+        super().__init__()
+        self.att = nn.Sequential(
+            nn.LayerNorm(dim),
+            nn.Linear(dim, hidden), nn.Tanh(),
+            nn.Linear(hidden, 1)
+        )
+    def forward(self, x):  # x: (B,T,D)
+        w = self.att(x).squeeze(-1)              # (B,T)
+        w = torch.softmax(w, dim=1)
+        mean = (x * w.unsqueeze(-1)).sum(dim=1)
+        std  = torch.sqrt(((x-mean.unsqueeze(1))**2 * w.unsqueeze(-1)).sum(dim=1) + 1e-5)
+        return torch.cat([mean, std], dim=-1)    # (B,2D)

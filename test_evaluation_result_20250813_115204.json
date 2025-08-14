@@ -1,0 +1,251 @@
+{
+  "evaluation_metadata": {
+    "user_id": "test_user_001",
+    "scenario_id": "3",
+    "evaluation_date": "2025-08-13T11:50:43.315095",
+    "total_interactions": 70,
+    "conversation_duration_minutes": 35.0,
+    "voice_recording_path": "s3로 저장",
+    "conversation_transcript": "[{\"role\": \"student\", \"content\": \"안녕하세요. 저는 신경과라고 합니다.\", \"timestamp\": \"2025-08-13T11:50:43.309732\", \"emotion\": {\"predicted_emotion\": \"Kind\", \"confidence\": 0.85, \"emotion_scores\": {\"Kind\": 0.85, \"Anxious\": 0.1, \"Dry\": 0.05}}}, {\"role\": \"patient\", \"content\": \"네, 안녕하세요.\", \"timestamp\": \"2025-08-13T11:51:43.309732\", \"emotion\": null}, {\"role\": \"student\", \"content\": \"환자분 성함과 나이, 등록번호가 어떻게 되세요?\", \"timestamp\": \"2025-08-13T11:52:43.309732\", \"emotion\": {\"predicted_emotion\": \"Kind\", \"confidence\": 0.78, \"emotion_scores\": {\"Kind\": 0.78, \"Anxious\": 0.15, \"Dry\": 0.07}}}, {\"role\": \"patient\", \"content\": \"김영희, 75세입니다. 등록번호는 1234567입니다.\", \"timestamp\": \"2025-08-13T11:53:43.309732\", \"emotion\": null}, {\"role\": \"student\", \"content\": \"네, 어떻게 오셨어요?\", \"timestamp\": \"2025-08-13T11:54:43.309732\", \"emotion\": {\"predicted_emotion\": \"Kind\", \"confidence\": 0.82, \"emotion_scores\": {\"Kind\": 0.82, \"Anxious\": 0.12, \"Dry\": 0.06}}}, {\"role\": \"patient\", \"content\": \"요즘 기억력이 많이 떨어지는 것 같아서 왔습니다.\", \"timestamp\": \"2025-08-13T11:55:43.309732\", \"emotion\": null}, {\"role\": \"student\", \"content\": \"기억력이 떨어지시는 것 같다. 그러면 그게 언제부터 그러시는 거죠?\", \"timestamp\": \"2025-08-13T11:56:43.309732\", \"emotion\": {\"predicted_emotion\": \"Kind\", \"confidence\": 0.89, \"emotion_scores\": {\"Kind\": 0.89, \"Anxious\": 0.08, \"Dry\": 0.03}}}, {\"role\": \"patient\", \"content\": \"한 6개월 전부터 심해진 것 같아요.\", \"timestamp\": \"2025-08-13T11:57:43.309732\", \"emotion\": null}, {\"role\": \"student\", \"content\": \"그러면 어떻게 깜빡하시고 기억력이 떨어지시는지 편하게 얘기 한번 해보시겠어요?\", \"timestamp\": \"2025-08-13T11:58:43.309732\", \"emotion\": {\"predicted_emotion\": \"Kind\", \"confidence\": 0.76, \"emotion_scores\": {\"Kind\": 0.76, \"Anxious\": 0.18, \"Dry\": 0.06}}}, {\"role\": \"patient\", \"content\": \"방금 뭘 하려고 했는지 까먹고, 물건을 어디 뒀는지 자꾸 잊어버려요.\", \"timestamp\": \"2025-08-13T11:59:43.309732\", \"emotion\": null}, {\"role\": \"student\", \"content\": \"그러면 그게 이제 비교적 최근의 일들을 잘 까먹으시나요? 아니면 옛날 일도 많이 잊어버리시나요?\", \"timestamp\": \"2025-08-13T12:00:43.309732\", \"emotion\": {\"predicted_emotion\": \"Kind\", \"confidence\": 0.85, \"emotion_scores\": {\"Kind\": 0.85, \"Anxious\": 0.1, \"Dry\": 0.05}}}, {\"role\": \"patient\", \"content\": \"최근 일들을 더 많이 까먹는 것 같아요. 옛날 일은 기억나는데.\", \"timestamp\": \"2025-08-13T12:01:43.309732\", \"emotion\": null}, {\"role\": \"student\", \"content\": \"그러면 혹시 최근에 성격 변화 같은 건 없으세요? 급해지거나 짜증이 나거나 많이 다투시거나 그런 건?\", \"timestamp\": \"2025-08-13T12:02:43.309732\", \"emotion\": {\"predicted_emotion\": \"Kind\", \"confidence\": 0.78, \"emotion_scores\": {\"Kind\": 0.78, \"Anxious\": 0.15, \"Dry\": 0.07}}}, {\"role\": \"patient\", \"content\": \"예전보다 짜증이 많이 나는 것 같아요.\", \"timestamp\": \"2025-08-13T12:03:43.309732\", \"emotion\": null}, {\"role\": \"student\", \"content\": \"물건 이름이나 단어 같은 거 생각이 잘 안나거나 말하는 게 좀 어둔하거나 그런건 없으세요?\", \"timestamp\": \"2025-08-13T12:04:43.309732\", \"emotion\": {\"predicted_emotion\": \"Kind\", \"confidence\": 0.82, \"emotion_scores\": {\"Kind\": 0.82, \"Anxious\": 0.12, \"Dry\": 0.06}}}, {\"role\": \"patient\", \"content\": \"네, 가끔 단어가 생각이 안 날 때가 있어요.\", \"timestamp\": \"2025-08-13T12:05:43.309732\", \"emotion\": null}, {\"role\": \"student\", \"content\": \"최근에 길을 잃어버렸다거나 다니던 길인데 잘 모르겠다거나 그런 적은 없으세요?\", \"timestamp\": \"2025-08-13T12:06:43.309732\", \"emotion\": {\"predicted_emotion\": \"Kind\", \"confidence\": 0.89, \"emotion_scores\": {\"Kind\": 0.89, \"Anxious\": 0.08, \"Dry\": 0.03}}}, {\"role\": \"patient\", \"content\": \"아직까지는 길을 잃어버린 적은 없어요.\", \"timestamp\": \"2025-08-13T12:07:43.309732\", \"emotion\": null}, {\"role\": \"student\", \"content\": \"계산은 잘 하세요? 예를 들면 물건 살 때 돈 내는 거 그런 거?\", \"timestamp\": \"2025-08-13T12:08:43.309732\", \"emotion\": {\"predicted_emotion\": \"Kind\", \"confidence\": 0.76, \"emotion_scores\": {\"Kind\": 0.76, \"Anxious\": 0.18, \"Dry\": 0.06}}}, {\"role\": \"patient\", \"content\": \"계산은 아직 괜찮은 것 같아요.\", \"timestamp\": \"2025-08-13T12:09:43.309732\", \"emotion\": null}, {\"role\": \"student\", \"content\": \"알겠습니다. 일단은 기억력도 떨어지시는 것 같은데 일상생활을 할 때 그 기억력 때문에 문제가 되거나 그런 일상생활에 장애가 있으세요?\", \"timestamp\": \"2025-08-13T12:10:43.309732\", \"emotion\": {\"predicted_emotion\": \"Kind\", \"confidence\": 0.85, \"emotion_scores\": {\"Kind\": 0.85, \"Anxious\": 0.1, \"Dry\": 0.05}}}, {\"role\": \"patient\", \"content\": \"가끔 요리할 때 가스불 끄는 걸 깜빡해서 걱정이에요.\", \"timestamp\": \"2025-08-13T12:11:43.309732\", \"emotion\": null}, {\"role\": \"student\", \"content\": \"예를 들면 직장생활에서 기억을 못 해가지고 실제로 상사와 문제가 되었거나 아니면 은행을 보는데 그게 문제가 되었거나 그런 게 있으세요?\", \"timestamp\": \"2025-08-13T12:12:43.309732\", \"emotion\": {\"predicted_emotion\": \"Kind\", \"confidence\": 0.78, \"emotion_scores\": {\"Kind\": 0.78, \"Anxious\": 0.15, \"Dry\": 0.07}}}, {\"role\": \"patient\", \"content\": \"은퇴해서 직장은 안 다니지만, 은행 업무는 아직 괜찮아요.\", \"timestamp\": \"2025-08-13T12:13:43.309732\", \"emotion\": null}, {\"role\": \"student\", \"content\": \"친구와 약속 같은 거는 깜빡하시거나 그런 적은 있으세요?\", \"timestamp\": \"2025-08-13T12:14:43.309732\", \"emotion\": {\"predicted_emotion\": \"Kind\", \"confidence\": 0.82, \"emotion_scores\": {\"Kind\": 0.82, \"Anxious\": 0.12, \"Dry\": 0.06}}}, {\"role\": \"patient\", \"content\": \"네, 가끔 약속을 깜빡할 때가 있어요.\", \"timestamp\": \"2025-08-13T12:15:43.309732\", \"emotion\": null}, {\"role\": \"student\", \"content\": \"조금은 있으신데 약간 애매하시다. 알겠습니다.\", \"timestamp\": \"2025-08-13T12:16:43.309732\", \"emotion\": {\"predicted_emotion\": \"Kind\", \"confidence\": 0.89, \"emotion_scores\": {\"Kind\": 0.89, \"Anxious\": 0.08, \"Dry\": 0.03}}}, {\"role\": \"patient\", \"content\": \"네.\", \"timestamp\": \"2025-08-13T12:17:43.309732\", \"emotion\": null}, {\"role\": \"student\", \"content\": \"가족 중에서 혹시 치매 환자가 있으세요?\", \"timestamp\": \"2025-08-13T12:18:43.309732\", \"emotion\": {\"predicted_emotion\": \"Kind\", \"confidence\": 0.76, \"emotion_scores\": {\"Kind\": 0.76, \"Anxious\": 0.18, \"Dry\": 0.06}}}, {\"role\": \"patient\", \"content\": \"어머니께서 치매를 앓으셨어요.\", \"timestamp\": \"2025-08-13T12:19:43.309732\", \"emotion\": null}, {\"role\": \"student\", \"content\": \"몇 살 때 정도 그러셨어요?\", \"timestamp\": \"2025-08-13T12:20:43.309732\", \"emotion\": {\"predicted_emotion\": \"Kind\", \"confidence\": 0.85, \"emotion_scores\": {\"Kind\": 0.85, \"Anxious\": 0.1, \"Dry\": 0.05}}}, {\"role\": \"patient\", \"content\": \"80세쯤부터 시작되셨던 것 같아요.\", \"timestamp\": \"2025-08-13T12:21:43.309732\", \"emotion\": null}, {\"role\": \"student\", \"content\": \"환자분은 당뇨, 고혈압, 협심증 같은 혈관성 질환이 있으세요?\", \"timestamp\": \"2025-08-13T12:22:43.309732\", \"emotion\": {\"predicted_emotion\": \"Kind\", \"confidence\": 0.78, \"emotion_scores\": {\"Kind\": 0.78, \"Anxious\": 0.15, \"Dry\": 0.07}}}, {\"role\": \"patient\", \"content\": \"고혈압이 있어서 약을 먹고 있어요.\", \"timestamp\": \"2025-08-13T12:23:43.309732\", \"emotion\": null}, {\"role\": \"student\", \"content\": \"그거 말고는 뭐 우울증이나 진통제나 다른 약 같은 거 드시는 건 없으세요?\", \"timestamp\": \"2025-08-13T12:24:43.309732\", \"emotion\": {\"predicted_emotion\": \"Kind\", \"confidence\": 0.82, \"emotion_scores\": {\"Kind\": 0.82, \"Anxious\": 0.12, \"Dry\": 0.06}}}, {\"role\": \"patient\", \"content\": \"우울증약은 안 먹고 있어요.\", \"timestamp\": \"2025-08-13T12:25:43.309732\", \"emotion\": null}, {\"role\": \"student\", \"content\": \"몸이 많이 피곤하거나 최근에 최근에 몸무게가 많이 찌거나 아니면 갑상선 질환 같은 것도 없으시고요?\", \"timestamp\": \"2025-08-13T12:26:43.309732\", \"emotion\": {\"predicted_emotion\": \"Kind\", \"confidence\": 0.89, \"emotion_scores\": {\"Kind\": 0.89, \"Anxious\": 0.08, \"Dry\": 0.03}}}, {\"role\": \"patient\", \"content\": \"몸무게는 비슷하고 갑상선은 괜찮아요.\", \"timestamp\": \"2025-08-13T12:27:43.309732\", \"emotion\": null}, {\"role\": \"student\", \"content\": \"최근에 우울함이 많이 심하거나 의욕이 없거나 그런 게 있으세요?\", \"timestamp\": \"2025-08-13T12:28:43.309732\", \"emotion\": {\"predicted_emotion\": \"Kind\", \"confidence\": 0.76, \"emotion_scores\": {\"Kind\": 0.76, \"Anxious\": 0.18, \"Dry\": 0.06}}}, {\"role\": \"patient\", \"content\": \"가끔 우울할 때가 있어요.\", \"timestamp\": \"2025-08-13T12:29:43.309732\", \"emotion\": null}, {\"role\": \"student\", \"content\": \"혹시 환각 같은 헛개비가 보이거나 엉뚱한 행동을 하거나 이상한 소리 한 번씩 하시는 건 없으세요?\", \"timestamp\": \"2025-08-13T12:30:43.309732\", \"emotion\": {\"predicted_emotion\": \"Kind\", \"confidence\": 0.85, \"emotion_scores\": {\"Kind\": 0.85, \"Anxious\": 0.1, \"Dry\": 0.05}}}, {\"role\": \"patient\", \"content\": \"그런 건 없어요.\", \"timestamp\": \"2025-08-13T12:31:43.309732\", \"emotion\": null}, {\"role\": \"student\", \"content\": \"손이 떨리거나 몸이 뻣뻣하거나 느려지는 건 없으세요?\", \"timestamp\": \"2025-08-13T12:32:43.309732\", \"emotion\": {\"predicted_emotion\": \"Kind\", \"confidence\": 0.78, \"emotion_scores\": {\"Kind\": 0.78, \"Anxious\": 0.15, \"Dry\": 0.07}}}, {\"role\": \"patient\", \"content\": \"그런 건 없어요.\", \"timestamp\": \"2025-08-13T12:33:43.309732\", \"emotion\": null}, {\"role\": \"student\", \"content\": \"걸음걸이가 종종 걸었거나 불편하시거나 아니면 소변 조절이 잘 안 되시는 불편함은 없으세요?\", \"timestamp\": \"2025-08-13T12:34:43.309732\", \"emotion\": {\"predicted_emotion\": \"Kind\", \"confidence\": 0.82, \"emotion_scores\": {\"Kind\": 0.82, \"Anxious\": 0.12, \"Dry\": 0.06}}}, {\"role\": \"patient\", \"content\": \"아직까지는 괜찮아요.\", \"timestamp\": \"2025-08-13T12:35:43.309732\", \"emotion\": null}, {\"role\": \"student\", \"content\": \"평소에 술 많이 드시는 편이세요?\", \"timestamp\": \"2025-08-13T12:36:43.309732\", \"emotion\": {\"predicted_emotion\": \"Kind\", \"confidence\": 0.89, \"emotion_scores\": {\"Kind\": 0.89, \"Anxious\": 0.08, \"Dry\": 0.03}}}, {\"role\": \"patient\", \"content\": \"거의 안 마셔요.\", \"timestamp\": \"2025-08-13T12:37:43.309732\", \"emotion\": null}, {\"role\": \"student\", \"content\": \"혹시 머리를 다치시거나 뇌염 같은 거 뇌질환 앓은 적은 없으세요?\", \"timestamp\": \"2025-08-13T12:38:43.309732\", \"emotion\": {\"predicted_emotion\": \"Kind\", \"confidence\": 0.76, \"emotion_scores\": {\"Kind\": 0.76, \"Anxious\": 0.18, \"Dry\": 0.06}}}, {\"role\": \"patient\", \"content\": \"없어요.\", \"timestamp\": \"2025-08-13T12:39:43.309732\", \"emotion\": null}, {\"role\": \"student\", \"content\": \"알겠습니다. 그러면 제가 이제 신체 진찰을 하도록 하겠습니다.\", \"timestamp\": \"2025-08-13T12:40:43.309732\", \"emotion\": {\"predicted_emotion\": \"Kind\", \"confidence\": 0.85, \"emotion_scores\": {\"Kind\": 0.85, \"Anxious\": 0.1, \"Dry\": 0.05}}}, {\"role\": \"patient\", \"content\": \"네.\", \"timestamp\": \"2025-08-13T12:41:43.309732\", \"emotion\": null}, {\"role\": \"student\", \"content\": \"이제 진찰은 끝났고요 혹시 걱정되는 거 있으세요?\", \"timestamp\": \"2025-08-13T12:42:43.309732\", \"emotion\": {\"predicted_emotion\": \"Kind\", \"confidence\": 0.78, \"emotion_scores\": {\"Kind\": 0.78, \"Anxious\": 0.15, \"Dry\": 0.07}}}, {\"role\": \"patient\", \"content\": \"치매가 맞는 건가요?\", \"timestamp\": \"2025-08-13T12:43:43.309732\", \"emotion\": null}, {\"role\": \"student\", \"content\": \"음 일단은 가족력이 있으시고 또 기억력이 떨어지시는 것 때문에 치매의 가장 흔한 유형인 알츠하이머 치매 가능성을 고려하긴 해야 될 것 같습니다\", \"timestamp\": \"2025-08-13T12:44:43.309732\", \"emotion\": {\"predicted_emotion\": \"Kind\", \"confidence\": 0.82, \"emotion_scores\": {\"Kind\": 0.82, \"Anxious\": 0.12, \"Dry\": 0.06}}}, {\"role\": \"patient\", \"content\": \"네.\", \"timestamp\": \"2025-08-13T12:45:43.309732\", \"emotion\": null}, {\"role\": \"student\", \"content\": \"하지만 그 극심한 스트레스 때문에 최근에 우울증 증상이 좀 있어 보이셔서 우울증에 의한 가성 침해의 가능성도 고려해야 합니다.\", \"timestamp\": \"2025-08-13T12:46:43.309732\", \"emotion\": {\"predicted_emotion\": \"Kind\", \"confidence\": 0.89, \"emotion_scores\": {\"Kind\": 0.89, \"Anxious\": 0.08, \"Dry\": 0.03}}}, {\"role\": \"patient\", \"content\": \"네.\", \"timestamp\": \"2025-08-13T12:47:43.309732\", \"emotion\": null}, {\"role\": \"student\", \"content\": \"또 조금 가능성이 높지는 않지만 고혈압이 있고 고혈압 조절이 안되시는 것으로 봐서는 혈관성 치매 가능성도 함께 고려해야 할 것 같습니다.\", \"timestamp\": \"2025-08-13T12:48:43.309732\", \"emotion\": {\"predicted_emotion\": \"Kind\", \"confidence\": 0.76, \"emotion_scores\": {\"Kind\": 0.76, \"Anxious\": 0.18, \"Dry\": 0.06}}}, {\"role\": \"patient\", \"content\": \"네.\", \"timestamp\": \"2025-08-13T12:49:43.309732\", \"emotion\": null}, {\"role\": \"student\", \"content\": \"일단 피검사를 할 거고요. 그리고 인지기능 검사 자세하게 하고 뇌 MRI를 찍어서 정확한 이유와 원인을 확인하도록 하겠습니다.\", \"timestamp\": \"2025-08-13T12:50:43.309732\", \"emotion\": {\"predicted_emotion\": \"Kind\", \"confidence\": 0.85, \"emotion_scores\": {\"Kind\": 0.85, \"Anxious\": 0.1, \"Dry\": 0.05}}}, {\"role\": \"patient\", \"content\": \"네, 알겠습니다.\", \"timestamp\": \"2025-08-13T12:51:43.309732\", \"emotion\": null}, {\"role\": \"student\", \"content\": \"경도인지장애와 치매는 둘 다 인지기능, 기억력이나 언어능력이나 판단력 같은 인지기능이 떨어지는 것은 맞는데\", \"timestamp\": \"2025-08-13T12:52:43.309732\", \"emotion\": {\"predicted_emotion\": \"Kind\", \"confidence\": 0.78, \"emotion_scores\": {\"Kind\": 0.78, \"Anxious\": 0.15, \"Dry\": 0.07}}}, {\"role\": \"patient\", \"content\": \"네.\", \"timestamp\": \"2025-08-13T12:53:43.309732\", \"emotion\": null}, {\"role\": \"student\", \"content\": \"치매는 그로 인한 인질기능 저하 때문에 일상생활에 장애가 있는 것을 치매라고 말하고요. 일상생활에 장애가 없는 단계를 경도인지저하라고 치매 전 단계 정도로 생각하고 있습니다.\", \"timestamp\": \"2025-08-13T12:54:43.309732\", \"emotion\": {\"predicted_emotion\": \"Kind\", \"confidence\": 0.82, \"emotion_scores\": {\"Kind\": 0.82, \"Anxious\": 0.12, \"Dry\": 0.06}}}, {\"role\": \"patient\", \"content\": \"네, 알겠습니다.\", \"timestamp\": \"2025-08-13T12:55:43.309732\", \"emotion\": null}, {\"role\": \"student\", \"content\": \"혹시 또 다른 궁금한 거 있으세요?\", \"timestamp\": \"2025-08-13T12:56:43.309732\", \"emotion\": {\"predicted_emotion\": \"Kind\", \"confidence\": 0.89, \"emotion_scores\": {\"Kind\": 0.89, \"Anxious\": 0.08, \"Dry\": 0.03}}}, {\"role\": \"patient\", \"content\": \"없어요.\", \"timestamp\": \"2025-08-13T12:57:43.309732\", \"emotion\": null}, {\"role\": \"student\", \"content\": \"네. 그러면 검사 후에 뵙도록 하겠습니다. 조심해서 가세요.\", \"timestamp\": \"2025-08-13T12:58:43.309732\", \"emotion\": {\"predicted_emotion\": \"Kind\", \"confidence\": 0.76, \"emotion_scores\": {\"Kind\": 0.76, \"Anxious\": 0.18, \"Dry\": 0.06}}}, {\"role\": \"patient\", \"content\": \"네, 감사합니다.\", \"timestamp\": \"2025-08-13T12:59:43.309732\", \"emotion\": null}]"
+  },
+  "scores": {
+    "total_score": 78.5,
+    "completion_rate": 0.8,
+    "quality_score": 7.5,
+    "weighted_breakdown": {
+      "completeness_score": 32.0,
+      "quality_score": 22.5,
+      "appropriateness_score": 16.0,
+      "intent_score": 8.5
+    },
+    "grade": "B"
+  },
+  "feedback": {
+    "overall_feedback": "6단계 의학적 분석을 통한 종합 평가입니다. 총점: 78.5점",
+    "strengths": [
+      "환자와의 소통 능력",
+      "의학적 정확성"
+    ],
+    "weaknesses": [
+      "외상력 관련 질문 누락",
+      "일부 질문의 간결성 부족"
+    ],
+    "medical_insights": [
+      "환자의 치매 가능성 다각도 고려",
+      "알츠하이머 치매와 혈관성 치매 진단에 대한 의학적 이해"
+    ],
+    "comprehensive_analysis": "종합 평가 결과, 학생의 의학교육 평가는 전반적으로 높은 수준을 보였습니다. 의료 완성도 측면에서는 일부 항목의 누락이 있었으나, 질적 수준과 시나리오 적합성에서 뛰어난 성과를 보였습니다. 특히 환자와의 소통 능력과 의학적 정확성이 강점으로 꼽히며, 외상력 관련 질문 누락과 일부 질문의 간결성 부족이 약점으로 지적됩니다. 의학적 통찰력 측면에서는 환자의 치매 가능성을 다각도로 고려하고, 알츠하이머 치매와 혈관성 치매 진단에 대한 의학적 이해가 돋보였습니다.",
+    "evaluation_method": "6단계 의학적 분석"
+  },
+  "conversation_summary": {
+    "total_questions": 35,
+    "duration_minutes": 35.0
+  },
+  "detailed_analysis": {
+    "medical_context": {
+      "primary_differentials": [
+        "알츠하이머병",
+        "혈관성 치매",
+        "루이 바디병"
+      ],
+      "critical_elements": [
+        "신체 검사 결과 (신경학적 소견, 인지 기능 평가)",
+        "혈액검사 (갑상선 기능, 비타민 B12, 간기능 검사)",
+        "뇌 영상 검사 (뇌 MRI 또는 CT)"
+      ],
+      "time_priority": [
+        "뇌 영상 검사",
+        "혈액검사",
+        "신체 검사"
+      ],
+      "safety_concerns": [
+        "안전한 진단을 위해 혈액검사 및 영상 검사 전 과거력 및 약물 복용 여부 확인",
+        "환자의 인지 능력과 안전을 위해 가족 또는 간병인과의 소통"
+      ],
+      "medical_importance_score": 9
+    },
+    "question_intent": {
+      "medical_purpose_clarity": 9,
+      "systematic_approach": 8,
+      "patient_centeredness": 9,
+      "time_efficiency": 8,
+      "overall_intent_score": 8.5,
+      "intent_analysis": "의학적 목적은 명확하게 확인하고, 체계적이고 논리적인 접근을 했으며 환자 중심적으로 질문을 전달하려 노력했으며, 시간을 효율적으로 활용하려고 노력했음. 다만 일부 질문에서 더 간결하게 구성할 수 있었을 것으로 판단됨."
+    },
+    "completeness": {
+      "category_completeness": {
+        "O_onset": {
+          "completion_level": "partial",
+          "medical_risk_level": "medium",
+          "completeness_score": 6,
+          "evidence": "환자: 한 6개월 전부터 심해진 것 같아요."
+        },
+        "Co_course": {
+          "completion_level": "partial",
+          "medical_risk_level": "medium",
+          "completeness_score": 7,
+          "evidence": "환자의 증상 변동성(fluctuation) 확인을 위해 '최근에 우울함이 많이 심하거나 의욕이 없거나 그런 게 있으세요?'와 같은 질문이 있었으나, 증상의 악화/완화 경향 파악을 위한 명시적인 질문은 부족함."
+        },
+        "Ex_experience": {
+          "completion_level": "partial",
+          "medical_risk_level": "medium",
+          "completeness_score": 6,
+          "evidence": "환자가 최근 기억력이 떨어진다고 언급하고, 최근 일들을 더 많이 까먹는다고 설명함. 또한, 환자의 어머니가 치매를 앓았던 사실이 언급되었고, 환자의 고혈압과 우울증에 대한 정보가 확인되었음."
+        },
+        "C_character": {
+          "completion_level": "partial",
+          "medical_risk_level": "high",
+          "completeness_score": 6,
+          "evidence": "환자의 짜증이 많이 나는 것 같다는 간접적인 정보와 최근에 우울할 때가 있어요라는 간접적 정보가 있으나, 직접적으로 C (Character) - 특징에 대한 질문이 부족함."
+        },
+        "A_associated": {
+          "completion_level": "partial",
+          "medical_risk_level": "medium",
+          "completeness_score": 6,
+          "evidence": "환자의 기억력 저하와 관련된 동반 증상에 대해 질문을 시도함. 예를 들어, 최근에 성격 변화, 우울증, 단어 기억력 저하, 약속 깜빡함 등을 확인하려고 노력함."
+        },
+        "F_factor": {
+          "completion_level": "partial",
+          "medical_risk_level": "medium",
+          "completeness_score": 6,
+          "evidence": "환자의 증상을 악화시키는 요인에 대한 질문이 일부 포함되어 있으나 완화요인에 대한 질문은 전혀 다뤄지지 않았습니다. 예를 들어, 환자의 우울증 증상이 어떤 요인으로 악화되었는지, 혹은 어떤 요인으로 완화되는지에 대한 정보가 부족합니다."
+        },
+        "E_exam": {
+          "completion_level": "partial",
+          "medical_risk_level": "medium",
+          "completeness_score": 6,
+          "evidence": "환자: 가족 중에서 혹시 치매 환자가 있으세요? / 환자: 어머니께서 치매를 앓으셨어요."
+        },
+        "trauma_history": {
+          "completion_level": "none",
+          "medical_risk_level": "low",
+          "completeness_score": 1,
+          "evidence": "외상력과 관련된 내용은 전혀 다뤄지지 않았습니다."
+        },
+        "past_medical_history": {
+          "completion_level": "partial",
+          "medical_risk_level": "medium",
+          "completeness_score": 6,
+          "evidence": "환자의 가족 중에서 어머니가 치매를 앓으셨다는 정보가 과거력과 관련이 있음. 또한 환자가 고혈압이 있어서 약을 복용 중이라는 정보도 과거력과 관련이 있음."
+        },
+        "medication_history": {
+          "completion_level": "partial",
+          "medical_risk_level": "medium",
+          "completeness_score": 6,
+          "evidence": "환자가 고혈압 약물을 복용 중이며, 우울증약을 복용하지 않고 있다는 내용이 확인됨. 하지만 다른 약물력 관련 질문은 다뤄지지 않았음."
+        },
+        "family_history": {
+          "completion_level": "partial",
+          "medical_risk_level": "medium",
+          "completeness_score": 7,
+          "evidence": "환자: 가족 중에서 혹시 치매 환자가 있으세요? 환자: 어머니께서 치매를 앓으셨어요."
+        },
+        "social_history": {
+          "completion_level": "partial",
+          "medical_risk_level": "medium",
+          "completeness_score": 6,
+          "evidence": "환자가 요리할 때 가스불을 깜빡해서 걱정한다는 내용이 있으나, 직업적 스트레스 요인에 대한 질문이나 식습관, 운동습관에 대한 파악이 누락되었습니다."
+        },
+        "examination_preparation": {
+          "completion_level": "partial",
+          "medical_risk_level": "medium",
+          "completeness_score": 6,
+          "evidence": "환자와의 대화에서 진찰 준비 관련 내용이 일부 다뤄졌습니다. 학생이 환자의 성함, 나이, 등록번호를 확인하고, 환자의 증상 및 기억력에 대한 질문을 직접적으로 하였습니다. 그러나 손 위생, 동의 구하기, 환자 자세 조정 등의 요소는 언급되지 않았습니다."
+        },
+        "vital_signs": {
+          "completion_level": "partial",
+          "medical_risk_level": "medium",
+          "completeness_score": 6,
+          "evidence": "학생이 환자에게 '손이 떨리거나 몸이 뻣뻣하거나 느려지는 건 없으세요?'라는 질문을 통해 활력징후 중 일부를 다뤘으나, 다른 활력징후 측정 항목들은 다뤄지지 않았습니다."
+        },
+        "physical_examination_technique": {
+          "completion_level": "partial",
+          "medical_risk_level": "medium",
+          "completeness_score": 7,
+          "evidence": "학생: 이제 진찰은 끝났고요 혹시 걱정되는 거 있으세요? 환자: 치매가 맞는 건가요? 학생: 음 일단은 가족력이 있으시고 또 기억력이 떨어지시는 것 때문에 치매의 가장 흔한 유형인 알츠하이머 치매 가능성을 고려하긴 해야 될 것 같습니다 환자: 네. 학생: 하지만 그 극심한 스트레스 때문에 최근에 우울증 증상이 좀 있어 보이셔서 우울증에 의한 가성 침해의 가능성도 고려해야 합니다. 환자: 네. 학생: 또 조금 가능성이 높지는 않지만 고혈압이 있고 고혈압 조절이 안되시는 것으로 봐서는 혈관성 치매 가능성도 함께 고려해야 할 것 같습니다. 환자: 네."
+        },
+        "examination_attitude": {
+          "completion_level": "partial",
+          "medical_risk_level": "medium",
+          "completeness_score": 7,
+          "evidence": "학생이 환자에게 직접적으로 질문하여 기억력, 성격 변화, 일상생활에 관련된 질문을 통해 진찰 태도를 일부 다뤘으며, 환자의 불편함과 걱정을 고려하여 부드럽고 신중한 접근을 시도함"
+        },
+        "condition_explanation": {
+          "completion_level": "partial",
+          "medical_risk_level": "medium",
+          "completeness_score": 6,
+          "evidence": "환자의 기억력 저하에 대한 질문과 이에 대한 대화가 있었으나, 치매 가능성과 관련된 상세한 설명 및 환자의 상태에 대한 종합적인 설명이 미흡했습니다. 추가적인 정보 수집이 필요합니다."
+        },
+        "lifestyle_guidance": {
+          "completion_level": "partial",
+          "medical_risk_level": "medium",
+          "completeness_score": 7,
+          "evidence": "환자가 기억력이 떨어져서 요리할 때 가스불을 꺼냄을 깜빡하는 문제를 언급하였으며, 최근 우울증 증상이 있고 가끔 약속을 깜빡하는 등의 일상생활에서의 어려움을 언급하였다. 또한 가족 중에서 치매 환자가 있고, 고혈압이 있어서 약을 복용 중이라는 정보도 언급되었다."
+        },
+        "treatment_plan": {
+          "completion_level": "partial",
+          "medical_risk_level": "medium",
+          "completeness_score": 6,
+          "evidence": "환자와 학생이 대화를 통해 치료 계획에 대해 언급한 부분은 '피검사를 할 거고요. 그리고 인지기능 검사 자세하게 하고 뇌 MRI를 찍어서 정확한 이유와 원인을 확인하도록 하겠습니다.'로 확인됩니다. 이는 간접적으로 치료 계획에 대한 언급이 있었으나, 추가 검사 계획만 언급되었고 약물 치료 계획이나 예후 설명은 다뤄지지 않았습니다."
+        },
+        "communication_skills": {
+          "completion_level": "direct",
+          "medical_risk_level": "medium",
+          "completeness_score": 8,
+          "evidence": "학생이 직접적으로 환자에게 질문하여 정보를 수집하고 있으며, 대화 내용에서 환자의 증상과 가족력, 기존 질병 등을 통해 의사소통 기술이 활발히 사용되고 있음을 확인할 수 있습니다."
+        }
+      },
+      "overall_completeness_score": 6.1,
+      "critical_gaps": [
+        "외상력"
+      ],
+      "medical_completeness_analysis": "개별 카테고리 평가를 통해 20개 항목 중 1개 항목이 누락되었습니다."
+    },
+    "quality": {
+      "medical_accuracy": 9,
+      "communication_efficiency": 8,
+      "clinical_practicality": 9,
+      "patient_care": 9,
+      "overall_quality_score": 8.75,
+      "quality_analysis": "학생의 질문은 대부분 의학적으로 정확하고 적절한 내용을 다뤘습니다. 환자와의 대화에서 소통이 원활하게 이루어졌고, 환자의 상황을 잘 이해하고 신중하게 질문을 이어나갔습니다. 질문들은 임상적으로 실용적이었고, 환자의 증상을 다각도로 파악하기 위해 다양한 관점에서 접근했습니다. 또한, 환자의 감정과 상황을 고려하여 배려 깊은 태도를 보였습니다. 전반적으로 높은 수준의 질문과 의사소통 능력을 보여주었으며, 개선할 점은 거의 없는 수준입니다."
+    },
+    "appropriateness": {
+      "inappropriate_questions": [],
+      "scenario_specific_score": 9,
+      "patient_profile_score": 8,
+      "time_allocation_score": 7,
+      "overall_appropriateness_score": 8,
+      "appropriateness_analysis": "이 시나리오는 신경과 치매 케이스에 대한 학생-환자 대화로 구성되어 있습니다. 질문들은 대부분 적절하게 환자의 증상과 가족력, 의료 기록 등을 파악하기 위해 이끌어졌습니다. 환자의 기억력 문제와 가족력을 고려하여 알츠하이머 치매 가능성을 탐색하고, 우울증과 혈관성 치매 가능성도 함께 고려하였습니다. 질문들은 대부분 환자의 상태를 이해하고 진단을 위한 정보를 수집하는 데 도움이 되었습니다. 시간 배분 측면에서는 진찰 전후에 적절한 정보 수집과 설명을 위한 시간을 할애하였으나, 일부 질문들은 조금 더 간결하게 구성할 수 있었을 것으로 평가됩니다."
+    },
+    "comprehensive": {
+      "final_completion_rate": 0.8,
+      "final_quality_score": 7.5,
+      "weighted_scores": {
+        "completeness_weighted": 32.0,
+        "quality_weighted": 22.5,
+        "appropriateness_weighted": 16.0,
+        "intent_weighted": 8.5
+      },
+      "detailed_feedback": {
+        "strengths": [
+          "환자와의 소통 능력",
+          "의학적 정확성"
+        ],
+        "weaknesses": [
+          "외상력 관련 질문 누락",
+          "일부 질문의 간결성 부족"
+        ],
+        "medical_insights": [
+          "환자의 치매 가능성 다각도 고려",
+          "알츠하이머 치매와 혈관성 치매 진단에 대한 의학적 이해"
+        ]
+      },
+      "comprehensive_analysis": "종합 평가 결과, 학생의 의학교육 평가는 전반적으로 높은 수준을 보였습니다. 의료 완성도 측면에서는 일부 항목의 누락이 있었으나, 질적 수준과 시나리오 적합성에서 뛰어난 성과를 보였습니다. 특히 환자와의 소통 능력과 의학적 정확성이 강점으로 꼽히며, 외상력 관련 질문 누락과 일부 질문의 간결성 부족이 약점으로 지적됩니다. 의학적 통찰력 측면에서는 환자의 치매 가능성을 다각도로 고려하고, 알츠하이머 치매와 혈관성 치매 진단에 대한 의학적 이해가 돋보였습니다."
+    }
+  },
+  "evaluation_method": "6단계 의학적 분석",
+  "system_info": {
+    "version": "v2.0",
+    "evaluation_steps": 6
+  }
+}

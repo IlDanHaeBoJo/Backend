@@ -19,7 +19,7 @@ from fastapi.staticfiles import StaticFiles
 
 from core.config import settings
 from core.startup import service_manager
-from routes import admin_notices, api, student_notices, websocket, auth, attachments,cpx  # attachments 라우터 추가, cpx 라우터 추가
+from routes import admin_notices, api, student_notices, websocket, auth, cpx, attachments, user_management 
 
 logger = logging.getLogger(__name__)
 
@@ -84,9 +84,10 @@ app.include_router(cpx.admin_router) # CPX 관리자용 라우터 포함
 app.include_router(admin_notices.router, tags=["관리자용 공지사항"])
 app.include_router(student_notices.router, tags=["학생용 공지사항"])
 app.include_router(attachments.router, tags=["첨부파일"])
+app.include_router(user_management.router) # 사용자 관리 라우터 추가
 
-# 정적 파일 서빙 (TTS 오디오 파일)
-app.mount("/static", StaticFiles(directory="static"), name="static")
+# TTS 오디오 파일 서빙 (캐시 디렉토리에서)
+app.mount("/cache", StaticFiles(directory="cache"), name="cache")
 
 if __name__ == "__main__":
     import uvicorn
