@@ -15,6 +15,8 @@ from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage, SystemMessage, BaseMessage as AnyMessage
 from langgraph.graph import StateGraph, END
 from langgraph.graph.message import add_messages
+from langchain_community.vectorstores import FAISS
+from langchain_huggingface import HuggingFaceEmbeddings
 
 # CPX 평가 상태 정의 (Multi-Step Reasoning 전용)
 class CPXEvaluationState(TypedDict):
@@ -410,6 +412,11 @@ class EvaluationService:
         self.workflow = None
         self._initialize_langgraph_components()
 
+        # FAISS 인덱스 로드
+        self.embedding_model = "intfloat/multilingual-e5-large"
+        self.faiss_index_path = Path("Backend/RAG/medical_db")
+        self.faiss_index = FAISS.load_local(self.faiss_index_path, HuggingFaceEmbeddings(model_name=self.embedding_model), allow_dangerous_deserialization=True)
+
     async def start_evaluation_session(self, user_id: str, scenario_id: str) -> str:
         """평가 세션 시작"""
         session_id = f"{user_id}_{scenario_id}_{int(datetime.now().timestamp())}"
@@ -778,8 +785,6 @@ class EvaluationService:
             self.llm = None
             self.workflow = None
 
-
-
     async def evaluate_conversation(self, user_id: str, scenario_id: str, conversation_log: List[Dict]) -> Dict:
         """LangGraph 워크플로우를 사용한 CPX 평가 실행"""
         # 초기 상태 구성 (Multi-Step 전용)
@@ -919,25 +924,25 @@ class EvaluationService:
         scenario_name = scenario_info.get("name", f"시나리오 {scenario_id}")
         
         medical_context_prompt = f"""
-당신은 의학교육 전문가입니다. 다음 시나리오의 의학적 맥락을 분석하세요.
+            당신은 의학교육 전문가입니다. 다음 시나리오의 의학적 맥락을 분석하세요.
 
-【시나리오 정보】: {scenario_name}
+            【시나리오 정보】: {scenario_name}
 
-다음 관점에서 분석하세요:
-1. 주요 감별진단들과 각각의 위험도
-2. 놓치면 안 되는 Critical 정보들
-3. 시간 효율성 측면에서 우선순위
-4. 환자 안전을 위해 반드시 확인해야 할 요소들
+            다음 관점에서 분석하세요:
+            1. 주요 감별진단들과 각각의 위험도
+            2. 놓치면 안 되는 Critical 정보들
+            3. 시간 효율성 측면에서 우선순위
+            4. 환자 안전을 위해 반드시 확인해야 할 요소들
 
-다음 JSON 형식으로 응답하세요:
-{{
-    "primary_differentials": ["주요 감별진단 리스트"],
-    "critical_elements": ["놓치면 위험한 핵심 요소들"],
-    "time_priority": ["시간 제약 하에서 우선순위 요소들"],
-    "safety_concerns": ["환자 안전 관련 필수 확인사항"],
-    "medical_importance_score": 의학적 중요도(1-10)
-}}
-"""
+            다음 JSON 형식으로 응답하세요:
+            {{
+                "primary_differentials": ["주요 감별진단 리스트"],
+                "critical_elements": ["놓치면 위험한 핵심 요소들"],
+                "time_priority": ["시간 제약 하에서 우선순위 요소들"],
+                "safety_concerns": ["환자 안전 관련 필수 확인사항"],
+                "medical_importance_score": 의학적 중요도(1-10)
+            }}
+        """
         
         messages = [
             SystemMessage(content="당신은 경험 많은 의학교육 전문가입니다."),
@@ -970,28 +975,28 @@ class EvaluationService:
         medical_context = state.get("medical_context_analysis", {})
         
         question_intent_prompt = f"""
-당신은 의학교육 평가 전문가입니다. 학생의 질문들의 의도를 분석하세요.
+            당신은 의학교육 평가 전문가입니다. 학생의 질문들의 의도를 분석하세요.
 
-【의학적 맥락】: {medical_context}
+            【의학적 맥락】: {medical_context}
 
-【학생-환자 대화】: {conversation_text}
+            【학생-환자 대화】: {conversation_text}
 
-다음 관점에서 질문 의도를 분석하세요:
-1. 의학적 목적의 명확성 - 각 질문이 명확한 의학적 목적을 가지고 있는가?
-2. 체계적 접근성 - 논리적이고 체계적인 순서로 질문했는가?
-3. 환자 중심성 - 환자가 이해하기 쉽고 편안하게 답할 수 있도록 질문했는가?
-4. 시간 효율성 - 제한된 시간 내에서 효율적으로 정보를 수집하려 했는가?
+            다음 관점에서 질문 의도를 분석하세요:
+            1. 의학적 목적의 명확성 - 각 질문이 명확한 의학적 목적을 가지고 있는가?
+            2. 체계적 접근성 - 논리적이고 체계적인 순서로 질문했는가?
+            3. 환자 중심성 - 환자가 이해하기 쉽고 편안하게 답할 수 있도록 질문했는가?
+            4. 시간 효율성 - 제한된 시간 내에서 효율적으로 정보를 수집하려 했는가?
 
-다음 JSON 형식으로 응답하세요:
-{{
-    "medical_purpose_clarity": 의학적 목적 명확성 점수(1-10),
-    "systematic_approach": 체계적 접근성 점수(1-10),
-    "patient_centeredness": 환자 중심성 점수(1-10),
-    "time_efficiency": 시간 효율성 점수(1-10),
-    "overall_intent_score": 전체 의도 점수(1-10),
-    "intent_analysis": "질문 의도에 대한 구체적 분석"
-}}
-"""
+            다음 JSON 형식으로 응답하세요:
+            {{
+                "medical_purpose_clarity": 의학적 목적 명확성 점수(1-10),
+                "systematic_approach": 체계적 접근성 점수(1-10),
+                "patient_centeredness": 환자 중심성 점수(1-10),
+                "time_efficiency": 시간 효율성 점수(1-10),
+                "overall_intent_score": 전체 의도 점수(1-10),
+                "intent_analysis": "질문 의도에 대한 구체적 분석"
+            }}
+        """
         
         messages = [
             SystemMessage(content="당신은 의학교육 평가 전문가입니다."),
@@ -1097,28 +1102,28 @@ class EvaluationService:
         example_text = category_examples.get(category['name'], "")
         
         single_category_prompt = f"""
-당신은 의학교육 평가 전문가입니다. 다음 병력청취 대화에서 "{category['name']}" 항목만 집중적으로 평가해주세요.
+            당신은 의학교육 평가 전문가입니다. 다음 병력청취 대화에서 "{category['name']}" 항목만 집중적으로 평가해주세요.
 
-【평가 대상】: {category['name']}
-【필수 요소들】: {category['required_elements']}
-【예시】: {example_text}
+            【평가 대상】: {category['name']}
+            【필수 요소들】: {category['required_elements']}
+            【예시】: {example_text}
 
-【학생-환자 대화】: {conversation_text}
+            【학생-환자 대화】: {conversation_text}
 
-이 대화에서 "{category['name']}" 관련 내용이 어느 정도 다뤄졌는지만 평가하세요:
-1. 직접적 완료: 명시적으로 질문하여 정보 수집함
-2. 간접적 완료: 대화 맥락에서 정보가 파악됨
-3. 부분적 완료: 불완전하지만 시도함
-4. 미완료: 전혀 다뤄지지 않음
+            이 대화에서 "{category['name']}" 관련 내용이 어느 정도 다뤄졌는지만 평가하세요:
+            1. 직접적 완료: 명시적으로 질문하여 정보 수집함
+            2. 간접적 완료: 대화 맥락에서 정보가 파악됨
+            3. 부분적 완료: 불완전하지만 시도함
+            4. 미완료: 전혀 다뤄지지 않음
 
-다음 JSON 형식으로 응답하세요:
-{{
-    "completion_level": "direct/indirect/partial/none",
-    "medical_risk_level": "high/medium/low",
-    "completeness_score": 점수(1-10),
-    "evidence": "판단 근거가 되는 대화 내용"
-}}
-"""
+            다음 JSON 형식으로 응답하세요:
+            {{
+                "completion_level": "direct/indirect/partial/none",
+                "medical_risk_level": "high/medium/low",
+                "completeness_score": 점수(1-10),
+                "evidence": "판단 근거가 되는 대화 내용"
+            }}
+        """
         
         messages = [
             SystemMessage(content="당신은 의학교육 평가 전문가입니다."),
@@ -1155,28 +1160,29 @@ class EvaluationService:
         print(f"⭐ [{state['user_id']}] Step 4: 질적 수준 평가 시작")
         
         conversation_text = self._build_conversation_text(state["conversation_log"])
+        scneario_num = self.session_data[state["user_id"]]
         
         quality_prompt = f"""
-당신은 의학교육 평가 전문가입니다. 학생 질문들의 질적 수준을 평가하세요.
+            당신은 의학교육 평가 전문가입니다. 학생 질문들의 질적 수준을 평가하세요.
 
-【학생-환자 대화】: {conversation_text}
+            【학생-환자 대화】: {conversation_text}
 
-다음 4가지 기준으로 질문 품질을 평가하세요:
-1. 의학적 정확성 (1-10점)
-2. 소통 효율성 (1-10점)  
-3. 임상적 실용성 (1-10점)
-4. 환자 배려 (1-10점)
+            다음 4가지 기준으로 질문 품질을 평가하세요:
+            1. 의학적 정확성 (1-10점)
+            2. 소통 효율성 (1-10점)  
+            3. 임상적 실용성 (1-10점)
+            4. 환자 배려 (1-10점)
 
-다음 JSON 형식으로 응답하세요:
-{{
-    "medical_accuracy": 의학적 정확성 점수(1-10),
-    "communication_efficiency": 소통 효율성 점수(1-10),
-    "clinical_practicality": 임상적 실용성 점수(1-10),
-    "patient_care": 환자 배려 점수(1-10),
-    "overall_quality_score": 전체 품질 점수(1-10),
-    "quality_analysis": "질적 수준에 대한 구체적 분석"
-}}
-"""
+            다음 JSON 형식으로 응답하세요:
+            {{
+                "medical_accuracy": 의학적 정확성 점수(1-10),
+                "communication_efficiency": 소통 효율성 점수(1-10),
+                "clinical_practicality": 임상적 실용성 점수(1-10),
+                "patient_care": 환자 배려 점수(1-10),
+                "overall_quality_score": 전체 품질 점수(1-10),
+                "quality_analysis": "질적 수준에 대한 구체적 분석"
+            }}
+        """
         
         messages = [
             SystemMessage(content="당신은 의학교육 평가 전문가입니다."),
@@ -1211,25 +1217,25 @@ class EvaluationService:
         scenario_name = scenario_info.get("name", f"시나리오 {scenario_id}")
         
         appropriateness_prompt = f"""
-당신은 의학교육 평가 전문가입니다. 학생의 질문들이 해당 시나리오에 적합했는지 검증하세요.
+            당신은 의학교육 평가 전문가입니다. 학생의 질문들이 해당 시나리오에 적합했는지 검증하세요.
 
-【시나리오 정보】: {scenario_name}
-【학생-환자 대화】: {conversation_text}
+            【시나리오 정보】: {scenario_name}
+            【학생-환자 대화】: {conversation_text}
 
-다음 관점에서 시나리오 적합성을 검증하세요:
-1. 부적절한 질문 체크
-2. 적절성 평가
+            다음 관점에서 시나리오 적합성을 검증하세요:
+            1. 부적절한 질문 체크
+            2. 적절성 평가
 
-다음 JSON 형식으로 응답하세요:
-{{
-    "inappropriate_questions": ["부적절한 질문들과 이유"],
-    "scenario_specific_score": 시나리오 특화 점수(1-10),
-    "patient_profile_score": 환자 프로필 적합성 점수(1-10),
-    "time_allocation_score": 시간 배분 적절성 점수(1-10),
-    "overall_appropriateness_score": 전체 적합성 점수(1-10),
-    "appropriateness_analysis": "시나리오 적합성에 대한 구체적 분석"
-}}
-"""
+            다음 JSON 형식으로 응답하세요:
+            {{
+                "inappropriate_questions": ["부적절한 질문들과 이유"],
+                "scenario_specific_score": 시나리오 특화 점수(1-10),
+                "patient_profile_score": 환자 프로필 적합성 점수(1-10),
+                "time_allocation_score": 시간 배분 적절성 점수(1-10),
+                "overall_appropriateness_score": 전체 적합성 점수(1-10),
+                "appropriateness_analysis": "시나리오 적합성에 대한 구체적 분석"
+            }}
+        """
         
         messages = [
             SystemMessage(content="당신은 의학교육 평가 전문가입니다."),
@@ -1266,38 +1272,38 @@ class EvaluationService:
         appropriateness = state.get("appropriateness_validation", {})
         
         comprehensive_prompt = f"""
-당신은 의학교육 평가 전문가입니다. 다음 Multi-Step 분석 결과들을 종합하여 최종 평가를 수행하세요.
+            당신은 의학교육 평가 전문가입니다. 다음 Multi-Step 분석 결과들을 종합하여 최종 평가를 수행하세요.
 
-【Step 1 - 의학적 맥락】: {medical_context}
-【Step 2 - 질문 의도】: {question_intent}
-【Step 3 - 의학적 완성도】: {completeness}
-【Step 4 - 질적 수준】: {quality}
-【Step 5 - 시나리오 적합성】: {appropriateness}
+            【Step 1 - 의학적 맥락】: {medical_context}
+            【Step 2 - 질문 의도】: {question_intent}
+            【Step 3 - 의학적 완성도】: {completeness}
+            【Step 4 - 질적 수준】: {quality}
+            【Step 5 - 시나리오 적합성】: {appropriateness}
 
-종합 평가 기준:
-1. 기본 완료율: Step 3의 완성도 기반 (40% 가중치)
-2. 품질 가중치: Step 4의 질적 수준 반영 (30% 가중치)
-3. 적합성 보정: Step 5의 시나리오 적합성 (20% 가중치)
-4. 의도 점수: Step 2의 질문 의도 (10% 가중치)
+            종합 평가 기준:
+            1. 기본 완료율: Step 3의 완성도 기반 (40% 가중치)
+            2. 품질 가중치: Step 4의 질적 수준 반영 (30% 가중치)
+            3. 적합성 보정: Step 5의 시나리오 적합성 (20% 가중치)
+            4. 의도 점수: Step 2의 질문 의도 (10% 가중치)
 
-반드시 아래의 정확한 JSON 형식으로만 응답하세요:
-{{
-    "final_completion_rate": 0.8,
-    "final_quality_score": 7.5,
-    "weighted_scores": {{
-        "completeness_weighted": 32.0,
-        "quality_weighted": 22.5,
-        "appropriateness_weighted": 16.0,
-        "intent_weighted": 8.5
-    }},
-    "detailed_feedback": {{
-        "strengths": ["구체적인 강점 1", "구체적인 강점 2"],
-        "weaknesses": ["구체적인 약점 1", "구체적인 약점 2"],
-        "medical_insights": ["의학적 통찰 1", "의학적 통찰 2"]
-    }},
-    "comprehensive_analysis": "종합 분석 내용을 여기에 작성"
-}}
-"""
+            반드시 아래의 정확한 JSON 형식으로만 응답하세요:
+            {{
+                "final_completion_rate": 0.8,
+                "final_quality_score": 7.5,
+                "weighted_scores": {{
+                    "completeness_weighted": 32.0,
+                    "quality_weighted": 22.5,
+                    "appropriateness_weighted": 16.0,
+                    "intent_weighted": 8.5
+                }},
+                "detailed_feedback": {{
+                    "strengths": ["구체적인 강점 1", "구체적인 강점 2"],
+                    "weaknesses": ["구체적인 약점 1", "구체적인 약점 2"],
+                    "medical_insights": ["의학적 통찰 1", "의학적 통찰 2"]
+                }},
+                "comprehensive_analysis": "종합 분석 내용을 여기에 작성"
+            }}
+        """
         
         messages = [
             SystemMessage(content="당신은 경험 많은 의학교육 평가 전문가입니다."),
@@ -1411,6 +1417,121 @@ class EvaluationService:
             return "C"
         else:
             return "F"
+
+    def _extract_scenario_keywords(self, scenario_info: str) -> str:
+        """시나리오 정보에서 핵심 키워드 추출"""
+        try:
+            # 정규표현식을 사용하여 증상, 나이, 성별 추출
+            import re
+            
+            # 증상 추출 (케이스 앞부분)
+            symptom_match = re.search(r'^(.+?)\s*케이스', scenario_info)
+            symptom = symptom_match.group(1).strip() if symptom_match else ""
+            
+            # 나이 추출
+            age_match = re.search(r'(\d+)세', scenario_info)
+            age = age_match.group(1) if age_match else ""
+            
+            # 성별 추출
+            gender_match = re.search(r'(남성|여성)', scenario_info)
+            gender = gender_match.group(1) if gender_match else ""
+            
+            # 키워드 조합
+            keywords = []
+            if symptom:
+                keywords.append(symptom)
+            if age:
+                keywords.append(f"{age}세")
+            if gender:
+                keywords.append(gender)
+            
+            result = " ".join(keywords)
+            print(f"🔍 시나리오 키워드 추출: '{scenario_info}' -> '{result}'")
+            return result
+            
+        except Exception as e:
+            print(f"❌ 시나리오 키워드 추출 실패: {e}")
+            return scenario_info
+
+    def _summarize_compare_conversation(self, conversation_log: List[Dict], state: CPXEvaluationState) -> str:
+        """대화 로그를 요약"""
+        try:
+            conversation_text = self._build_conversation_text(conversation_log)
+            scenario_num = state["scenario_id"]
+            scenario_info = self.scenario_applicable_elements[scenario_num]["name"]
+            
+            # 시나리오 정보에서 핵심 키워드 추출
+            scenario_keywords = self._extract_scenario_keywords(scenario_info)
+
+            
+            # 핵심 키워드를 사용하여 의학 지식 검색
+            medical_knowledge = self._retrieve_medical_knowledge(scenario_keywords)
+            print(f"🔍 의학 지식 검색 완료: {scenario_keywords}")
+
+            summary_prompt = f"""
+                당신은 의사와 환자 사이의 대화를 요약하는 대화 요약 도우미입니다.
+
+                【학생-환자 대화】: {conversation_text}
+                【시나리오 정보】: {scenario_info}
+
+                반드시 다음 형식으로 대화를 요약하세요:
+                1. 환자의 주요 증상
+                2. 의사가 수행한 주요 질문들
+                3. 의사의 진찰 결과
+                4. 의사의 치료 방안
+                5. 전체적인 대화의 특징
+
+                간결하고 명확하게 요약해주세요.
+            """
+
+            messages = [
+                SystemMessage(content="당신은 의사와 환자 사이의 대화를 요약하는 전문가입니다."),
+                HumanMessage(content=summary_prompt)
+            ]
+
+            response = self.llm(messages)
+            summary = response.content.strip()
+            print(f"📝 대화 요약 완료")
+
+            return summary
+            
+        except Exception as e:
+            print(f"❌ 대화 요약 실패: {e}")
+            return f"대화 요약 중 오류가 발생했습니다: {str(e)}"
+
+    def _retrieve_medical_knowledge(self, query: str) -> str:
+        """의학 지식 검색"""
+        try:
+            if self.faiss_index is None:
+                print("⚠️ FAISS 인덱스가 로드되지 않았습니다")
+                return "의학 지식 DB를 사용할 수 없습니다."
+            
+            # FAISS 검색 수행
+            docs_and_scores = self.faiss_index.similarity_search_with_score(
+                query, k=3  # 상위 3개 결과만 가져오기
+            )
+            
+            if not docs_and_scores:
+                return f"'{query}'에 대한 의학 지식 정보를 찾을 수 없습니다."
+            
+            # 검색 결과를 텍스트로 구성
+            knowledge_text = f"【{query} 관련 의학 지식】\n\n"
+            
+            for i, (doc, score) in enumerate(docs_and_scores, 1):
+                content = doc.page_content
+                metadata = doc.metadata
+                
+                # 메타데이터에서 출처 정보 추출
+                source = metadata.get('source', '의학 지식 DB')
+                
+                knowledge_text += f"{i}. {content}\n"
+            
+            print(f"🔍 의학 지식 검색 완료: '{query}' -> {len(docs_and_scores)}개 결과")
+            return knowledge_text
+            
+        except Exception as e:
+            print(f"❌ 의학 지식 검색 실패: {e}")
+            return f"의학 지식 검색 중 오류가 발생했습니다: {str(e)}"
 
     # =============================================================================
     # 새로운 실시간 대화 데이터 분석 메서드들
