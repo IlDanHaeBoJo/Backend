@@ -308,7 +308,7 @@ class AudioProcessor:
             audio_path = await service_manager.tts_service.generate_speech(response_text)
             logger.info(f"🔊 TTS 파일 생성됨: {audio_path}")
             
-            # 응답 데이터 구성
+            # 응답 데이터 구성 (프론트 전송용 audio_url, 서버 내부용 audio_path 모두 유지)
             audio_url = Path(audio_path).name if audio_path else None
             logger.info(f"🔗 WebSocket 전송할 audio_url: {audio_url}")
             response_data = {
@@ -316,6 +316,7 @@ class AudioProcessor:
                 "user_text": user_text,
                 "ai_text": response_text,
                 "audio_url": audio_url,
+                "audio_path": str(audio_path) if audio_path else None,
                 "avatar_action": "talking",
                 "processing_time": "실시간",
                 "conversation_ended": conversation_ended,
