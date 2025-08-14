@@ -22,9 +22,8 @@ class CpxService:
 
         cpx_detail = CpxDetails(
             result_id=cpx_result.result_id,
-            conversation_transcript="", # 초기값 설정
             memo="", # 초기값 설정
-            system_evaluation_data="" # 초기값 설정
+            system_evaluation_data={} # 초기값 설정
         )
         self.db.add(cpx_detail)
 
@@ -150,9 +149,8 @@ class CpxService:
         return cpx_result
 
     async def update_cpx_details(self, result_id: int, user_id: int,
-                                 conversation_transcript: Optional[str] = None,
                                  memo: Optional[str] = None,
-                                 system_evaluation_data: Optional[str] = None) -> Optional[CpxDetails]:
+                                 system_evaluation_data: Optional[dict] = None) -> Optional[CpxDetails]:
         """
         특정 CPX 실습 결과의 상세 정보(CpxDetails)를 업데이트합니다. (학생용)
         해당 결과가 주어진 user_id에 속하는지 확인합니다.
@@ -173,8 +171,6 @@ class CpxService:
         if not cpx_details:
             return None # CpxDetails를 찾을 수 없음 (논리적 오류 가능성)
 
-        if conversation_transcript is not None:
-            cpx_details.conversation_transcript = conversation_transcript
         if memo is not None:
             cpx_details.memo = memo
         if system_evaluation_data is not None:
