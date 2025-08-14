@@ -1,0 +1,239 @@
+{
+    "category": "기억력 저하",
+    "description": "기억력 저하를 주소로 내원한 환자에 대한 CPX 평가 체크리스트",
+    "evaluation_areas": {
+        "history_taking": {
+            "name": "병력 청취",
+            "weight": 0.60,
+            "subcategories": {
+                "O_onset": {
+                    "name": "O (Onset) - 발병 시기",
+                    "weight": 0.12,
+                    "required_questions": [
+                        "언제부터 기억력이 떨어지셨나요?",
+                        "갑자기 기억력이 떨어지나요? / 서서히 떨어지나요?",
+                        "특별한 사건이 있지는 않았나요? (사고/지인의 죽음 등)"
+                    ]
+                },
+                "L_location": {
+                    "name": "L (Location) - 위치",
+                    "weight": 0.0,
+                    "applicable": false,
+                    "note": "기억력 저하에서는 해당없음"
+                },
+                "D_duration": {
+                    "name": "D (Duration) - 지속시간/변동성",
+                    "weight": 0.08,
+                    "required_questions": [
+                        "증상이 지속적인가요?",
+                        "증상이 좋아지기도 하나요? (fluctuation)"
+                    ]
+                },
+                "Co_course": {
+                    "name": "Co (Course) - 경과",
+                    "weight": 0.08,
+                    "required_questions": [
+                        "증상이 점점 더 심해지시나요?"
+                    ]
+                },
+                "Ex_experience": {
+                    "name": "Ex (Experience) - 과거 경험",
+                    "weight": 0.06,
+                    "required_questions": [
+                        "이전에도 이런 적이 있나요?",
+                        "당시 치료를 받았나요?"
+                    ]
+                },
+                "C_character": {
+                    "name": "C (Character) - 증상 특징",
+                    "weight": 0.15,
+                    "required_questions": [
+                        "[Open] 어떤 것을 기억력이 떨어진 것이라고 말씀하시는 건가요?",
+                        "[양상] 최근 일이 기억이 나지 않으시나요? / 옛날 일이 기억이 나지 않으시나요?",
+                        "아침 식사 뭐 드셨어요? / 약속은 잘 기억하나요? / 어디서 태어나셨어요?",
+                        "길을 잃으신 적 있으세요? (공간인지)",
+                        "단어가 금방 떠오르지 않을 때가 있나요? / 상대방 말을 잘 이해 못하나요? (언어기능)",
+                        "돈 계산이나 돈 관리가 잘 되나요? (계산능력)",
+                        "가스불이나 현관문은 잘 잠그나요?",
+                        "[정도] 일상생활에 지장이 있나요?"
+                    ],
+                    "note": "DEATH/SHAFT: dress, eating, toilet, hygiene/shopping, housing, account, food, transport"
+                },
+                "A_associated": {
+                    "name": "A (Associated symptom) - 동반 증상 (감별진단별)",
+                    "weight": 0.12,
+                    "required_questions": [
+                        "[혈관치매] 두통 / 팔다리 힘 빠짐 / 말 어눌 / 시야 장애",
+                        "[전두측두엽치매] 성격 변화",
+                        "[루이소체치매] 환시 / 양손 떨림 / 행동 느려짐 / 보행 시 상체 숙여짐 / 보폭 감소",
+                        "[정상압수두증] 요실금 / 보폭 감소",
+                        "[가성치매] 우울 / 의욕 감소 / 초조, 불안 / 식욕 변화 / 체중 변화 / 수면 장애 / 자살 사고",
+                        "[갑상샘저하증] 추위 불내성"
+                    ]
+                },
+                "F_factor": {
+                    "name": "F (Factor) - 악화/완화 요인",
+                    "weight": 0.06,
+                    "required_questions": [
+                        "스트레스를 많이 받으시나요?"
+                    ]
+                },
+                "E_exam": {
+                    "name": "E (Exam) - 이전 검사/건강검진",
+                    "weight": 0.06,
+                    "required_questions": [
+                        "이전 건강검진에서 이상 소견은 없었나요?"
+                    ]
+                },
+                "trauma_history": {
+                    "name": "외상력",
+                    "weight": 0.06,
+                    "required_questions": [
+                        "[외상치매] 머리를 다친 적이 있나요?",
+                        "[섬망] 최근에 수술받거나 입원하신 적 있으세요?"
+                    ]
+                },
+                "past_medical_history": {
+                    "name": "과거력",
+                    "weight": 0.08,
+                    "required_questions": [
+                        "이전에 진단받은 질환이 있으신가요?",
+                        "정신건강의학과나 신경과 진료를 본 적 있으신가요?",
+                        "[감염] 뇌수막염이나 뇌염으로 치료받은 적 있으세요?"
+                    ]
+                },
+                "medication_history": {
+                    "name": "약물력",
+                    "weight": 0.06,
+                    "required_questions": [
+                        "[약물유발치매] 현재 복용하시는 약물이 있나요?",
+                        "(스테로이드, 항콜린제, 항우울제, 신경안정제 등)"
+                    ]
+                },
+                "social_history": {
+                    "name": "사회력",
+                    "weight": 0.08,
+                    "required_questions": [
+                        "최종 학력은 어떻게 되시나요? 직업은 어떻게 되시나요?",
+                        "[알코올] 술은 얼마나 드시나요? (빈도, 일회 섭취량)",
+                        "흡연은 하시나요?"
+                    ]
+                },
+                "family_history": {
+                    "name": "가족력",
+                    "weight": 0.06,
+                    "required_questions": [
+                        "가족 중에 치매나 기억 장애를 가진 분이 있나요?"
+                    ]
+                },
+                "gynecologic_history": {
+                    "name": "여성력 (해당시)",
+                    "weight": 0.03,
+                    "required_questions": [
+                        "LMP / 규칙적 / 주기 / 폐경"
+                    ]
+                }
+            }
+        },
+        "physical_examination": {
+            "name": "신체 진찰",
+            "weight": 0.25,
+            "subcategories": {
+                "examination_preparation": {
+                    "name": "진찰 준비",
+                    "weight": 0.1,
+                    "required_actions": [
+                        "이제부터 간단한 인지검사와 신체진찰을 하도록 할 텐데요. 괜찮으신가요?"
+                    ]
+                },
+                "cognitive_assessment": {
+                    "name": "인지 검사 (간이 MMSE)",
+                    "weight": 0.4,
+                    "required_actions": [
+                        "최종 학력은 어떻게 되시나요? (또는 사회력에서 물어봤다면 확인)",
+                        "[앉아서] 간이 MMSE 실시:",
+                        "① 시간 (년도/월/일/요일/계절) - 5점",
+                        "② 장소 (국가/시,도/여기 무엇 하는 곳/장소 이름/몇 층) - 5점",
+                        "③ 기억 등록 (비행기, 연필, 소나무 - 한 번씩 말하고 환자가 한 번에 3개 바로 말하도록) - 3점",
+                        "④ 100-7 (거기서 7을 빼면?) - 5점",
+                        "⑤ 기억 회상 (제가 아까 말씀드린 3가지 단어 기억하세요?) - 3점",
+                        "⑥ 물건 이름 (볼펜, 시계) - 2점",
+                        "⑦ 글씨 읽고 행동 (눈을 감으시오) - 1점"
+                    ]
+                },
+                "neurological_examination": {
+                    "name": "신경학적 검사",
+                    "weight": 0.3,
+                    "required_actions": [
+                        "뇌신경 검사: 안구운동, 안면운동 [혈관치매]",
+                        "목: 갑상샘 촉진 [갑상샘저하증], 경동맥 청진 [혈관치매]",
+                        "손/팔: 손을 탁자 위에 올리고 resting tremor 관찰 / 상지 rigidity 확인 [레비소체치매]"
+                    ]
+                },
+                "motor_examination": {
+                    "name": "운동 검사",
+                    "weight": 0.2,
+                    "required_actions": [
+                        "[침대에 앉아서] 팔다리: 사지/감각/운동/DTR [혈관치매]",
+                        "[서서] 보행: 저기까지 걸어갔다 오세요 [혈관치매][레비소체치매][정상압수두증]",
+                        "(낙상 위험 있으므로 옆에서 보조)",
+                        "협조해 주셔서 감사합니다. 불편한 것은 없으신가요?"
+                    ]
+                }
+            }
+        },
+        "patient_education": {
+            "name": "환자 교육",
+            "weight": 0.15,
+            "subcategories": {
+                "empathy": {
+                    "name": "공감",
+                    "weight": 0.1,
+                    "required_actions": [
+                        "기억력이 자꾸 나빠져서 많이 걱정되셨을 것 같습니다."
+                    ]
+                },
+                "suspected_diagnosis": {
+                    "name": "추정 진단",
+                    "weight": 0.2,
+                    "required_actions": [
+                        "○○씨의 경우는 서서히 기억력이 저하되고, 특히 최근 일이 기억이 나지 않는 것으로 미루어 보아 알츠하이머 치매가 가장 의심이 됩니다."
+                    ]
+                },
+                "differential_diagnosis": {
+                    "name": "감별 진단",
+                    "weight": 0.2,
+                    "required_actions": [
+                        "하지만 이외에도 뇌척수액이 증가하거나 갑상샘 기능이 떨어질 때에도 기억력이 저하될 수 있습니다."
+                    ]
+                },
+                "diagnostic_tests": {
+                    "name": "검사 계획",
+                    "weight": 0.2,
+                    "required_actions": [
+                        "따라서 정확한 원인 감별을 위해 뇌 MRI와 뇌 PET 검사를 촬영하도록 하고, 갑상샘 기능을 보기 위한 혈액검사가 필요합니다. 괜찮으신가요?"
+                    ]
+                },
+                "treatment_education": {
+                    "name": "치료 및 교육",
+                    "weight": 0.2,
+                    "required_actions": [
+                        "알츠하이머 치매로 진단되는 경우 인지기능 개선 약물로 치료를 시작할 것입니다.",
+                        "치매의 치료에 가족분들의 도움이 많이 필요합니다.",
+                        "보호자분께서는 환자분에게 정해진 일과를 짜 주고 그것을 잊지 않도록 일깨워 주시면서 환자분이 규칙적으로 생활할 수 있게 해 주시면 좋겠습니다.",
+                        "또한 고혈압이나 당뇨에 대한 관리와 적절한 운동을 할 수 있게 해 주시는 것이 필요합니다.",
+                        "국가에서 운영하는 치매 지원 센터가 있는데, 구 단위로 있으며, 이곳에서 검사도 가능하고 치료비나 기타 활동 지원 사업도 해 주고 있으니 필요하시면 소개해 드리겠습니다.",
+                        "보호자분께서 케어가 불가능하시다면 사회복지사 방문 치료를 진행할 수도 있습니다"
+                    ]
+                },
+                "final_questions": {
+                    "name": "마무리 질문",
+                    "weight": 0.1,
+                    "required_actions": [
+                        "마지막으로 혹시 궁금한 점이 있으신가요?"
+                    ]
+                }
+            }
+        }
+    }
+}

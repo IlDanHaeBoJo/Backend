@@ -91,17 +91,26 @@ class LLMService:
                 prompt_parts.append(f"- {label}: {history_taking[key]}")
         
         # 신체 검사 정보
-        prompt_parts.append("\n【신체 검사 정보】")
-        for key, value in physical_examination.items():
-            prompt_parts.append(f"- {key}: {value}")
+        physical_examination = scenario_data.get("physical_examination", {})
+        if physical_examination:
+            prompt_parts.append("\n【신체 검사 정보】")
+            for key, value in physical_examination.items():
+                prompt_parts.append(f"- {key}: {value}")
         
         # 환자 교육 정보
-        prompt_parts.append("\n【환자 교육 관련 정보】")
-        if isinstance(patient_education, dict):
-            for key, value in patient_education.items():
-                prompt_parts.append(f"- {key}: {value}")
-        else:
-            prompt_parts.append(f"- 교육 내용: {patient_education}")
+        patient_education = scenario_data.get("patient_education", {})
+        if patient_education:
+            prompt_parts.append("\n【환자 교육 관련 정보】")
+            if isinstance(patient_education, dict):
+                for key, value in patient_education.items():
+                    prompt_parts.append(f"- {key}: {value}")
+            else:
+                prompt_parts.append(f"- 교육 내용: {patient_education}")
+        
+        # 카테고리 정보
+        category = scenario_info.get("category", "")
+        if category:
+            prompt_parts.append(f"\n【진료 카테고리】: {category}")
         
         # 환자 역할 지침
         prompt_parts.append("\n【환자 역할 지침】")
