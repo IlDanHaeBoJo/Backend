@@ -119,8 +119,6 @@ def create_model_and_processor(freeze_base_model: bool = True, num_speakers: int
 
     return model, processor
 
-
-
 def enable_last_k_blocks(model, last_k: int = 4):
     for p in model.wav2vec2.parameters():
         p.requires_grad = False
@@ -135,8 +133,6 @@ def enable_last_k_blocks(model, last_k: int = 4):
         if any(k in name for k in ["classifier", "adversary", "speaker_adversary", "pooler", "stats_projector", "projector"]):
             for p in module.parameters():
                 p.requires_grad = True
-
-
 
 def evaluate_model(model, dataloader, device):
     """모델 평가"""
@@ -184,8 +180,6 @@ def evaluate_model(model, dataloader, device):
         'predictions': predictions,
         'true_labels': true_labels
     }
-
-
 
 def train_model(model, train_loader, val_loader, device, num_epochs=3, learning_rate=3e-5):
     """직접 훈련 루프"""
@@ -296,9 +290,6 @@ def train_model(model, train_loader, val_loader, device, num_epochs=3, learning_
     
     return model
 
-
-
-
 # --- 메인 실행 함수 ---
 def main():
     """메인 함수"""
@@ -342,11 +333,6 @@ def main():
     # 데이터 분할 (파일명 마지막 숫자 기준)
     
     # (train_paths, train_labels), (val_paths, val_labels), (test_paths, test_labels) = split_data_by_last_digit(audio_paths, labels)
-    
-    print(f"\n📊 분할 결과:")
-    print(f"  Train: {len(train_paths)}개")
-    print(f"  Validation: {len(val_paths)}개") 
-    print(f"  Test: {len(test_paths)}개")
     
     # 각 세트의 감정별 분포 확인
     from collections import Counter
