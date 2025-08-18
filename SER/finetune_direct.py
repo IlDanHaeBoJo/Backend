@@ -33,8 +33,11 @@ from transformers import (
 )
 # 적대적 학습을 위한 custom model 임포트
 from Wav2Vec2_seq_clf import custom_Wav2Vec2ForEmotionClassification
+from data_utils import *
+from config import Config
 
-# 감정 라벨 정의
+
+# 감정 라벨 정의 -> config.py로 옮김
 """
 "Anxious" : 0
 "Kind" : 1
@@ -48,6 +51,9 @@ MODEL_NAME = "kresnik/wav2vec2-large-xlsr-korean"
 SAMPLE_RATE = 16000
 MAX_DURATION = 10.0
 
+
+
+# Audio Augmentation -> audiomentaions 오류 지속 발생 .. ?
 AUGMENTATION = Compose([
     PitchShift(min_semitones=-2, max_semitones=2, p=0.5),
     TimeStretch(min_rate=0.9, max_rate=1.1, p=0.5),
@@ -57,91 +63,7 @@ AUGMENTATION = Compose([
 
 ])
 
-# Character Vocabulary 로드
-try:
-    with open('char_to_id.json', 'r', encoding='utf-8') as f:
-        CHAR2ID = json.load(f)
-    CHAR_VOCAB = list(CHAR2ID.keys())
-    ID2CHAR = {i: char for char, i in CHAR2ID.items()}
-    print(f"✅ Character Vocabulary 로드 완료 ({len(CHAR_VOCAB)}개)")
-except FileNotFoundError:
-    print("❌ 'char_to_id.json'을 찾을 수 없습니다. 먼저 build_vocab.py를 실행하세요.")
-    sys.exit(1)
 
-# --- 유틸리티 함수 ---
-
-def extract_number_from_filename(filename: str, type: Literal['content', 'emotion'] = 'emotion') -> Optional[int]:
-    try:
-        if type == "content":
-            # 파일명에서 마지막 숫자 그룹 전체를 추출 (예: F2001_000123.wav -> 123)
-            match = re.search(r'_(\d+)\.wav$', os.path.basename(filename))
-            if match:
-                return int(match.group(1))
-            return None
-        else:
-            # F..._...xxxD.wav 에서 마지막 숫자 D를 추출
-            match = re.search(r'_(\d+)\.wav$', os.path.basename(filename))
-            if match:
-                # 숫자가 여러 자리일 경우 마지막 한 자리만 사용
-                return int(match.group(1)) % 10
-            return None
-    except (ValueError, AttributeError):
-        return None
-
-def split_data_by_last_digit(audio_paths: List[str], labels: List[str]) -> Tuple[
-    Tuple[List[str], List[str]], 
-    Tuple[List[str], List[str]], 
-    Tuple[List[str], List[str]]
-]:
-    """파일명의 마지막 숫자를 기준으로 train/val/test 분할
-    
-    Args:
-        audio_paths: 오디오 파일 경로 리스트
-        labels: 해당하는 라벨 리스트
-        
-    Returns:
-        ((train_paths, train_labels), (val_paths, val_labels), (test_paths, test_labels))
-        - Train: 마지막 숫자가 1,2,3,4,5,6
-        - Validation: 마지막 숫자가 7,8
-        - Test: 마지막 숫자가 9,0
-    """
-    train_paths, train_labels = [], []
-    val_paths, val_labels = [], []
-    test_paths, test_labels = [], []
-    
-    for path, label in zip(audio_paths, labels):
-        last_digit = extract_number_from_filename(path, type="emotion")
-        
-        if last_digit is None:
-            print(f"⚠️ 파일명에서 마지막 숫자를 추출할 수 없습니다: {path}")
-            continue
-            
-        if last_digit in [1, 2, 3, 4, 5, 6]:
-            train_paths.append(path)
-            train_labels.append(label)
-        elif last_digit in [7, 8]:
-            val_paths.append(path)
-            val_labels.append(label)
-        elif last_digit in [9, 0]:
-            test_paths.append(path)
-            test_labels.append(label)
-    
-    return (train_paths, train_labels), (val_paths, val_labels), (test_paths, test_labels)
-
-def get_emotion_from_filename(filename: str) -> Optional[str]:
-    """파일명에서 번호를 추출하여 감정 라벨 반환"""
-    file_num = extract_number_from_filename(filename, type="content")
-    if file_num is None:
-        return None
-        
-    if 21 <= file_num <= 30:
-        return "Anxious"
-    elif 31 <= file_num <= 40:
-        return "Kind"
-    elif 141 <= file_num <= 150:
-        return "Dry"
-    else:
-        return None
 
 def load_dataset_subset(data_dir: str, max_per_class: int) -> Tuple[List[str], List[str]]:
     audio_paths = []
@@ -200,25 +122,6 @@ def preprocess_audio(file_path: str, processor: Wav2Vec2Processor, is_training: 
         print(f"오디오 전처리 오류: {file_path}, {e}")
         return None
 
-# (필수) 화자 ID 추출: data_dir 바로 아래 1단계 폴더명이 화자
-def extract_speaker_id(audio_path: str, data_dir: str) -> str:
-    rel = os.path.relpath(audio_path, data_dir)
-    spk = rel.split(os.sep)[0]
-    return spk
-
-def build_speaker_mapping(train_paths, data_dir):
-    train_speakers = sorted({extract_speaker_id(p, data_dir) for p in train_paths})
-    spk2id = {spk: i for i, spk in enumerate(train_speakers)}
-    return spk2id
-
-# (선택) 경로에서 감정 라벨 추론 (폴더명에 Anxious/Kind/Dry가 있으면 그걸 사용)
-def infer_emotion_from_path(audio_path: str) -> Optional[str]:
-    parts = os.path.normpath(audio_path).split(os.sep)
-    for p in reversed(parts):
-        if p in EMOTION_LABELS:
-            return p
-    # 폴더명에 없으면 파일명 규칙으로 추론 (기존 함수)
-    return get_emotion_from_filename(os.path.basename(audio_path))
 
 # 데이터 전체를 스캔해서 (경로, 감정, 화자, 스크립트ID) 인덱스 생성
 def build_corpus_index(data_dir: str,
@@ -346,91 +249,6 @@ def split_speaker_and_content(
 
     return to_xy(train_items), to_xy(val_items), to_xy(test_items)
 
-
-class EmotionDataset(Dataset):
-    def __init__(self, audio_paths: List[str], labels: List[str], processor: Wav2Vec2Processor, is_training: bool = True):
-        self.data_dir = "/data/ghdrnjs/SER/small/"
-        self.audio_paths = audio_paths
-        self.labels = labels
-        self.processor = processor
-        self.encoded_labels = [LABEL2ID[label] for label in labels]
-        self.is_training = is_training
-
-        with open("script.json", "r", encoding="utf-8") as f:
-            self.text_json = json.load(f)
-
-        self.spk2id = build_speaker_mapping(audio_paths, self.data_dir)        
-    def __len__(self):
-        return len(self.audio_paths)
-    
-    def __getitem__(self, idx):
-        audio_path = self.audio_paths[idx]
-        emotion_label = self.encoded_labels[idx]
-        file_number = extract_number_from_filename(audio_path, type="content")
-        
-        content_text = ""
-        if file_number is not None and str(file_number) in self.text_json:
-            content_text = self.text_json[str(file_number)]
-        
-        input_values = preprocess_audio(audio_path, self.processor, self.is_training)
-        if input_values is None:
-            input_values = torch.zeros(int(SAMPLE_RATE * MAX_DURATION))
-        
-        spk_idx_tensor = None
-        if self.spk2id is not None:
-            spk_str = extract_speaker_id(audio_path, self.data_dir)
-            if spk_str in self.spk2id:
-                spk_idx = self.spk2id[spk_str]
-                spk_idx_tensor = torch.tensor(spk_idx, dtype=torch.long)
-
-        return {
-            'input_values': input_values,
-            'emotion_labels': torch.tensor(emotion_label, dtype=torch.long),
-            'content_text': content_text,
-            'speaker_id': spk_idx_tensor
-        }
-
-def collate_fn(batch: List[Dict[str, any]]) -> Dict[str, torch.Tensor]:
-    input_values = [item['input_values'] for item in batch]
-    emotion_labels = [item['emotion_labels'] for item in batch]
-    content_texts = [item['content_text'] for item in batch]
-    spk_list = [item.get('speaker_id', None) for item in batch]
-    
-    padded_input_values = torch.nn.utils.rnn.pad_sequence(input_values, batch_first=True, padding_value=0.0)
-    
-    tokenized_contents = []
-    content_lengths = []
-    for text in content_texts:
-        ids = [CHAR2ID.get(char, CHAR2ID['<unk>']) for char in text]
-        tokenized_contents.append(torch.tensor(ids, dtype=torch.long))
-        content_lengths.append(len(ids))
-
-    padded_content_labels = torch.nn.utils.rnn.pad_sequence(
-        tokenized_contents, 
-        batch_first=True, 
-        padding_value=CHAR2ID['<pad>']
-    )
-
-    # attention_mask for audio
-    attention_mask = torch.ones_like(padded_input_values, dtype=torch.long)
-    for i, seq in enumerate(input_values):
-        attention_mask[i, len(seq):] = 0
-
-    if all((s is not None) and isinstance(s, torch.Tensor) for s in spk_list):
-        # 각 요소가 0-dim long tensor라면 stack -> (B,)
-        speaker_ids = torch.stack(spk_list)            # shape: (B,)
-        speaker_ids = speaker_ids.view(-1).long()      # 보정
-    else:
-        speaker_ids = None
-
-    return {
-        'input_values': padded_input_values,
-        'attention_mask': attention_mask,
-        'labels': torch.stack(emotion_labels),
-        'content_labels': padded_content_labels,
-        'content_labels_lengths': torch.tensor(content_lengths, dtype=torch.long),
-        'speaker_ids': speaker_ids,
-    }
 
 def create_model_and_processor(freeze_base_model: bool = True, num_speakers: int = 500):
     """모델과 프로세서 생성"""
