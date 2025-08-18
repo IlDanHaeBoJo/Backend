@@ -17,6 +17,9 @@ from collections import Counter
 from tqdm import tqdm
 from sklearn.metrics import classification_report, accuracy_score, f1_score
 
+import wandb
+import random
+
 def create_model_and_processor(freeze_base_model: bool = True):
     """모델과 프로세서 생성"""
     print(f"🤖 모델 로딩: {config.model.model_name}")
@@ -95,6 +98,8 @@ def train_model(model, train_loader, val_loader, device, num_epochs=3, learning_
         # 훈련
         model.train()
         train_loss = 0
+        train_predictions = []
+        train_true_labels = []
         optimizer.zero_grad()
 
         progress_bar = tqdm(train_loader, desc=f"Epoch {epoch+1} Training")
@@ -130,6 +135,11 @@ def train_model(model, train_loader, val_loader, device, num_epochs=3, learning_
             
             train_loss += loss.item()
             
+            # 예측 결과 저장
+            preds = torch.argmax(outputs['emotion_logits'], dim=-1)
+            train_predictions.extend(preds.cpu().numpy())
+            train_true_labels.extend(batch['labels'].cpu().numpy())
+            
             progress_bar.set_postfix({
                 'loss': f'{loss.item():.4f}',
                 'lr': f'{scheduler.get_last_lr()[0]:.6f}'
@@ -137,9 +147,21 @@ def train_model(model, train_loader, val_loader, device, num_epochs=3, learning_
         
         train_loss /= len(train_loader)
         
+        # 훈련 정확도 및 F1 계산
+        train_accuracy = accuracy_score(train_true_labels, train_predictions)
+        train_f1 = f1_score(train_true_labels, train_predictions, average='weighted')
+
+        # Weight & Biases 로깅
+        wandb.log({
+            "epoch": epoch,
+            "train/loss": train_loss,
+            "train/accuracy": train_accuracy,
+            "train/f1": train_f1
+        })
+
         # 검증
         print("📊 검증 중...")
-        val_results = evaluate_model(model, val_loader, device)
+        val_results = evaluate_model(model, val_loader, device, epoch=epoch, is_training=True)
         
         print(f"🔍 검증 결과 - Loss: {val_results['loss']:.4f}, Acc: {val_results['accuracy']:.4f}, F1: {val_results['f1']:.4f}")
         
@@ -156,7 +178,7 @@ def train_model(model, train_loader, val_loader, device, num_epochs=3, learning_
     
     return model
 
-def evaluate_model(model, dataloader, device):
+def evaluate_model(model, dataloader, device, epoch=None, is_training=False):
     """모델 평가"""
     model.eval()
     total_loss = 0
@@ -194,6 +216,14 @@ def evaluate_model(model, dataloader, device):
     avg_loss = total_loss / len(dataloader)
     accuracy = accuracy_score(true_labels, predictions)
     f1 = f1_score(true_labels, predictions, average='weighted')
+
+    if is_training:
+        wandb.log({
+            "epoch" : epoch,
+            "val/loss": loss,
+            "val/accuracy": accuracy,
+            "val/f1": f1,
+        })
     
     return {
         'loss': avg_loss,
@@ -218,6 +248,20 @@ def main():
     model, processor = create_model_and_processor()
     enable_last_k_blocks(model, last_k=4)
     model.to(device)
+
+    # Weight & Biases 초기화
+    wandb.init(
+    project="Speech_Emotion_Recognition",
+    name="3 Class Classification",
+
+    config={
+        "learning_rate": config.training.learning_rate,
+        "epochs": config.training.num_epochs,
+        "batch_size": config.training.batch_size,
+        "architecture": "custom Wav2Vec2",
+    }
+    )
+
     
     # 데이터 로드
     index = build_corpus_index(config.paths.data_dir)
@@ -295,7 +339,7 @@ def main():
         
         # 최종 테스트 평가
         print(f"\n🧪 최종 테스트 평가...")
-        test_results = evaluate_model(model, test_loader, device)
+        test_results = evaluate_model(model, test_loader, device, is_training=False)
         
         print(f"\n🎯 최종 테스트 결과:")
         print(f"   - 정확도: {test_results['accuracy']:.4f}")
