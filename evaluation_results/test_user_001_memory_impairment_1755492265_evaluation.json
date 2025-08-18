@@ -1,0 +1,535 @@
+{
+  "session_id": "test_user_001_memory_impairment_1755492265",
+  "user_id": "test_user_001",
+  "scenario_id": "memory_impairment",
+  "start_time": "2025-08-18T13:44:25.589995",
+  "end_time": "2025-08-18T13:44:27.854451",
+  "duration_minutes": 0.03774093333333333,
+  "langgraph_text_analysis": {
+    "evaluation_metadata": {
+      "user_id": "test_user_001",
+      "scenario_id": "memory_impairment",
+      "evaluation_date": "2025-08-18T13:44:27.873213",
+      "conversation_duration_minutes": 11.0,
+      "voice_recording_path": "s3로 저장",
+      "conversation_transcript": "[{\"role\": \"doctor\", \"content\": \"안녕하세요, 어떤 증상으로 오셨나요?\", \"timestamp\": \"2025-08-18T13:44:25.590042\", \"emotion\": {\"predicted_emotion\": \"Kind\", \"confidence\": 0.85, \"emotion_scores\": {\"Anxious\": 0.1, \"Dry\": 0.05, \"Kind\": 0.85}}}, {\"role\": \"patient\", \"content\": \"요즘 기억력이 많이 떨어져서 걱정이 돼요.\", \"timestamp\": \"2025-08-18T13:44:25.691667\", \"emotion\": null}, {\"role\": \"doctor\", \"content\": \"언제부터 기억력 저하를 느끼셨나요?\", \"timestamp\": \"2025-08-18T13:44:25.792277\", \"emotion\": {\"predicted_emotion\": \"Kind\", \"confidence\": 0.78, \"emotion_scores\": {\"Anxious\": 0.12, \"Dry\": 0.1, \"Kind\": 0.78}}}, {\"role\": \"patient\", \"content\": \"한 6개월 전부터 서서히 시작된 것 같아요.\", \"timestamp\": \"2025-08-18T13:44:25.893037\", \"emotion\": null}, {\"role\": \"doctor\", \"content\": \"특정 부위의 통증은 없으시죠?\", \"timestamp\": \"2025-08-18T13:44:25.993731\", \"emotion\": {\"predicted_emotion\": \"Dry\", \"confidence\": 0.65, \"emotion_scores\": {\"Anxious\": 0.15, \"Dry\": 0.65, \"Kind\": 0.2}}}, {\"role\": \"patient\", \"content\": \"네, 특별한 통증은 없어요.\", \"timestamp\": \"2025-08-18T13:44:26.131878\", \"emotion\": null}, {\"role\": \"doctor\", \"content\": \"증상이 하루 종일 지속되나요, 아니면 특정 시간에만 나타나나요?\", \"timestamp\": \"2025-08-18T13:44:26.233400\", \"emotion\": {\"predicted_emotion\": \"Kind\", \"confidence\": 0.72, \"emotion_scores\": {\"Anxious\": 0.08, \"Dry\": 0.2, \"Kind\": 0.72}}}, {\"role\": \"patient\", \"content\": \"하루 종일 그런 것 같아요. 특히 새로운 것을 기억하기 어려워요.\", \"timestamp\": \"2025-08-18T13:44:26.334165\", \"emotion\": null}, {\"role\": \"doctor\", \"content\": \"증상이 점점 심해지고 있나요?\", \"timestamp\": \"2025-08-18T13:44:26.436465\", \"emotion\": {\"predicted_emotion\": \"Kind\", \"confidence\": 0.8, \"emotion_scores\": {\"Anxious\": 0.05, \"Dry\": 0.15, \"Kind\": 0.8}}}, {\"role\": \"patient\", \"content\": \"네, 처음보다는 더 심해진 것 같아요.\", \"timestamp\": \"2025-08-18T13:44:26.538979\", \"emotion\": null}, {\"role\": \"doctor\", \"content\": \"스트레스를 받거나 피곤할 때 더 심해지나요?\", \"timestamp\": \"2025-08-18T13:44:26.640006\", \"emotion\": {\"predicted_emotion\": \"Kind\", \"confidence\": 0.75, \"emotion_scores\": {\"Anxious\": 0.1, \"Dry\": 0.15, \"Kind\": 0.75}}}, {\"role\": \"patient\", \"content\": \"맞아요, 스트레스 받을 때 더 심해지는 것 같아요.\", \"timestamp\": \"2025-08-18T13:44:26.740558\", \"emotion\": null}, {\"role\": \"doctor\", \"content\": \"구체적으로 어떤 종류의 기억이 어려우신가요? 최근 일들인가요, 오래된 일들인가요?\", \"timestamp\": \"2025-08-18T13:44:26.841017\", \"emotion\": {\"predicted_emotion\": \"Kind\", \"confidence\": 0.82, \"emotion_scores\": {\"Anxious\": 0.03, \"Dry\": 0.15, \"Kind\": 0.82}}}, {\"role\": \"patient\", \"content\": \"주로 최근 일들이에요. 어제 뭘 했는지도 잘 기억이 안 나요.\", \"timestamp\": \"2025-08-18T13:44:26.941625\", \"emotion\": null}, {\"role\": \"doctor\", \"content\": \"다른 증상도 있나요? 두통이나 어지럼증, 수면 문제는 어떠세요?\", \"timestamp\": \"2025-08-18T13:44:27.042128\", \"emotion\": {\"predicted_emotion\": \"Kind\", \"confidence\": 0.77, \"emotion_scores\": {\"Anxious\": 0.08, \"Dry\": 0.15, \"Kind\": 0.77}}}, {\"role\": \"patient\", \"content\": \"잠을 잘 못 자고, 가끔 두통도 있어요.\", \"timestamp\": \"2025-08-18T13:44:27.142787\", \"emotion\": null}, {\"role\": \"doctor\", \"content\": \"과거에 머리 다친 적이나 뇌 관련 질환을 앓은 적이 있나요?\", \"timestamp\": \"2025-08-18T13:44:27.244220\", \"emotion\": {\"predicted_emotion\": \"Dry\", \"confidence\": 0.68, \"emotion_scores\": {\"Anxious\": 0.12, \"Dry\": 0.68, \"Kind\": 0.2}}}, {\"role\": \"patient\", \"content\": \"특별한 건 없었던 것 같아요.\", \"timestamp\": \"2025-08-18T13:44:27.347629\", \"emotion\": null}, {\"role\": \"doctor\", \"content\": \"이제 간단한 신체 검사를 해보겠습니다. 괜찮으시죠?\", \"timestamp\": \"2025-08-18T13:44:27.448703\", \"emotion\": {\"predicted_emotion\": \"Kind\", \"confidence\": 0.88, \"emotion_scores\": {\"Anxious\": 0.02, \"Dry\": 0.1, \"Kind\": 0.88}}}, {\"role\": \"patient\", \"content\": \"네, 괜찮습니다.\", \"timestamp\": \"2025-08-18T13:44:27.549433\", \"emotion\": null}, {\"role\": \"doctor\", \"content\": \"기억력 저하로 많이 걱정이 되셨을 텐데, 정확한 진단을 위해 추가 검사가 필요할 것 같습니다.\", \"timestamp\": \"2025-08-18T13:44:27.650790\", \"emotion\": {\"predicted_emotion\": \"Kind\", \"confidence\": 0.92, \"emotion_scores\": {\"Anxious\": 0.01, \"Dry\": 0.07, \"Kind\": 0.92}}}, {\"role\": \"patient\", \"content\": \"네, 알겠습니다. 검사는 언제 받을 수 있나요?\", \"timestamp\": \"2025-08-18T13:44:27.752682\", \"emotion\": null}]"
+    },
+    "scores": {
+      "total_score": 74.9,
+      "completion_rate": 0.6,
+      "quality_score": 8.8,
+      "weighted_breakdown": {
+        "completeness_score": 24.2,
+        "quality_score": 26.2,
+        "appropriateness_score": 16.0,
+        "intent_score": 8.5
+      },
+      "grade": "C+"
+    },
+    "feedback": {
+      "overall_feedback": "6단계 의학적 분석을 통한 종합 평가입니다. 총점: 74.9점",
+      "strengths": [
+        "세부 정보를 체계적으로 파악한 점",
+        "의학적 정확성과 임상적 실용성이 뛰어난 점",
+        "환자 배려가 세심한 점"
+      ],
+      "weaknesses": [
+        "운동 검사 미진행",
+        "사회력 및 가족력 미파악",
+        "일부 질문 중복"
+      ],
+      "medical_insights": [
+        "환자의 증상과 이력을 체계적으로 수집한 점",
+        "추가 검사 필요성을 강조한 점"
+      ],
+      "comprehensive_analysis": "이 학생의 CPX 성적은 중간 수준으로 평가됩니다. 완성도 측면에서는 일부 항목이 누락되었으며, 질적 수준은 높지만 일부 질문 중복이 보입니다. 시나리오 적합성은 높지만 시간 배분에 조금 더 신경 써야 합니다. 의도 측면에서는 환자의 증상을 체계적으로 파악하려는 노력이 보입니다. 강점으로는 세부 정보 수집과 의학적 정확성, 약점으로는 일부 항목 미진행과 질문 중복이 있습니다.",
+      "evaluation_method": "6단계 의학적 분석"
+    },
+    "conversation_summary": {
+      "total_questions": 0,
+      "duration_minutes": 11.0
+    },
+    "detailed_analysis": {
+      "medical_context": {
+        "primary_differentials": [
+          "알츠하이머병",
+          "혈관성 치매",
+          "정상압력수전증",
+          "우울증"
+        ],
+        "critical_elements": [
+          "급격한 기억력 저하",
+          "일상생활 동작에 어려움",
+          "인지기능 저하",
+          "정신병적 증상"
+        ],
+        "time_priority": [
+          "급격한 기억력 저하",
+          "인지기능 저하",
+          "정신병적 증상"
+        ],
+        "safety_concerns": [
+          "안전한 환경 조성",
+          "안전한 약물 처방",
+          "정확한 진단을 위한 검사"
+        ],
+        "medical_importance_score": 9
+      },
+      "question_intent": {
+        "medical_purpose_clarity": 9,
+        "systematic_approach": 8,
+        "patient_centeredness": 9,
+        "time_efficiency": 8,
+        "overall_intent_score": 8.5,
+        "intent_analysis": "환자의 기억력 저하 증상을 체계적으로 파악하기 위해 질문을 진행하였습니다. 의학적 목적은 명확하게 전달되었고, 질문이 환자 중심적이며 이해하기 쉽도록 구성되었습니다. 시간을 효율적으로 활용하려는 노력이 보이지만, 몇몇 질문에서 더 논리적인 순서로 진행할 수 있었을 것으로 보입니다."
+      },
+      "completeness": {
+        "category_completeness": {
+          "O_onset": {
+            "completion_level": "direct",
+            "medical_risk_level": "medium",
+            "completeness_score": 8,
+            "evidence": "환자가 직접 '한 6개월 전부터 서서히 시작된 것 같아요'라고 발병 시기를 명시적으로 언급함."
+          },
+          "D_duration": {
+            "completion_level": "partial",
+            "medical_risk_level": "medium",
+            "completeness_score": 7,
+            "evidence": "환자가 증상이 한 6개월 전부터 서서히 시작되었다고 언급하고, 증상이 점점 심해지고 있으며 스트레스를 받을 때 더 심해진다고 언급하였습니다. 또한, 최근 일들을 기억하기 어려워하고, 어제 뭘 했는지도 잘 기억이 안 난다고 언급하였습니다."
+          },
+          "Co_course": {
+            "completion_level": "direct",
+            "medical_risk_level": "medium",
+            "completeness_score": 8,
+            "evidence": "환자가 직접적으로 '증상이 점점 심해지고 있나요?'라는 질문에 '네, 처음보다는 더 심해진 것 같아요.'라고 답했습니다."
+          },
+          "Ex_experience": {
+            "completion_level": "partial",
+            "medical_risk_level": "medium",
+            "completeness_score": 7,
+            "evidence": "환자에게 '과거에 머리 다친 적이나 뇌 관련 질환을 앓은 적이 있나요?'라는 질문이 있었지만, 환자는 '특별한 건 없었던 것 같아요.'라고 대답했습니다."
+          },
+          "C_character": {
+            "completion_level": "partial",
+            "medical_risk_level": "medium",
+            "completeness_score": 7,
+            "evidence": "환자가 '요즘 기억력이 많이 떨어져서 걱정이 돼요.'라고 직접적으로 증상을 언급하고, '특히 새로운 것을 기억하기 어려워요.'라고 간접적으로 최근 일들이 기억이 안 난다고 언급했습니다. 또한 '주로 최근 일들이에요. 어제 뭘 했는지도 잘 기억이 안 나요.'라고 직접적으로 최근 일들이 기억이 안 난다고 언급했습니다. 이러한 내용들을 통해 C (Character) - 증상 특징에 대한 부분적인 평가가 이루어졌습니다."
+          },
+          "A_associated": {
+            "completion_level": "partial",
+            "medical_risk_level": "medium",
+            "completeness_score": 6,
+            "evidence": "환자가 기억력 저하 외에도 잠을 잘 못 자고, 가끔 두통이 있다고 언급했습니다. 이는 간접적으로 A (Associated symptom) - 동반 증상 (감별진단별) 관련 내용이 다뤄졌음을 시사합니다."
+          },
+          "F_factor": {
+            "completion_level": "direct",
+            "medical_risk_level": "medium",
+            "completeness_score": 8,
+            "evidence": "환자가 스트레스를 받을 때 증상이 더 심해진다고 직접적으로 언급함."
+          },
+          "E_exam": {
+            "completion_level": "partial",
+            "medical_risk_level": "medium",
+            "completeness_score": 6,
+            "evidence": "환자와 의사가 기억력 저하 증상에 대해 상세히 이야기하고, 의사가 추가 검사가 필요하다고 언급함. 하지만 이전 건강검진에서 이상 소견이 있었는지에 대한 명시적인 질문이나 언급은 없음."
+          },
+          "trauma_history": {
+            "completion_level": "partial",
+            "medical_risk_level": "medium",
+            "completeness_score": 6,
+            "evidence": "환자와의 대화에서 머리 다친 적이나 외상 관련 질환을 앓은 적에 대한 직접적인 질문은 없었지만, 환자가 두통과 잠을 잘 못 자는 등의 증상을 언급하며 외상력과 관련된 정보를 간접적으로 제공함."
+          },
+          "past_medical_history": {
+            "completion_level": "partial",
+            "medical_risk_level": "medium",
+            "completeness_score": 6,
+            "evidence": "환자와의 대화에서 '과거에 머리 다친 적이나 뇌 관련 질환을 앓은 적이 있나요?'라는 질문이 과거력 관련 내용을 다루고 있으나, 환자는 '특별한 건 없었던 것 같아요'라고 대답하여 부분적으로만 완료되었습니다."
+          },
+          "medication_history": {
+            "completion_level": "partial",
+            "medical_risk_level": "medium",
+            "completeness_score": 6,
+            "evidence": "환자와의 대화에서 약물력에 대한 직접적인 질문이나 언급은 없었으나, 환자가 잠을 잘 못 자고 가끔 두통이 있으며, 기억력 저하 증상을 호소하고 있음. 이를 통해 약물력에 대한 정보가 간접적으로 파악됨."
+          },
+          "social_history": {
+            "completion_level": "none",
+            "medical_risk_level": "low",
+            "completeness_score": 0,
+            "evidence": "대화에서 사회력과 관련된 내용이 전혀 다뤄지지 않았습니다."
+          },
+          "family_history": {
+            "completion_level": "none",
+            "medical_risk_level": "medium",
+            "completeness_score": 0,
+            "evidence": "가족력 관련 내용이 대화에서 전혀 다뤄지지 않았습니다."
+          },
+          "gynecologic_history": {
+            "completion_level": "partial",
+            "medical_risk_level": "medium",
+            "completeness_score": 6,
+            "evidence": "환자와의 대화에서 여성력 (해당시)에 대한 직접적인 질문 또는 언급은 없었습니다. 그러나 환자의 기억력 저하 증상과 관련하여 스트레스와 피로에 대한 질문이 있었고, 이는 간접적으로 여성력과 관련될 수 있습니다. 따라서 부분적으로 여성력 (해당시)에 대한 내용이 다뤄졌다고 볼 수 있습니다."
+          },
+          "examination_preparation": {
+            "completion_level": "direct",
+            "medical_risk_level": "medium",
+            "completeness_score": 8,
+            "evidence": "환자: 이제 간단한 신체 검사를 해보겠습니다. 괜찮으시죠?"
+          },
+          "cognitive_assessment": {
+            "completion_level": "partial",
+            "medical_risk_level": "medium",
+            "completeness_score": 7,
+            "evidence": "환자가 '요즘 기억력이 많이 떨어져서 걱정이 돼요.'라고 언급하고, '특히 새로운 것을 기억하기 어려워요.'라고 설명했으며, '주로 최근 일들이에요. 어제 뭘 했는지도 잘 기억이 안 나요.'라고 언급하여 간접적으로 인지 검사 (간이 MMSE) 관련 내용을 다뤘습니다."
+          },
+          "neurological_examination": {
+            "completion_level": "partial",
+            "medical_risk_level": "medium",
+            "completeness_score": 6,
+            "evidence": "환자와의 대화에서 기억력 저하 증상에 대해 자세히 이야기하고, 추가 검사의 필요성을 언급하며 '정확한 진단을 위해 추가 검사가 필요할 것 같습니다'라는 발언이 있었습니다. 하지만 구체적인 신경학적 검사 항목에 대한 직접적인 언급은 없었습니다."
+          },
+          "motor_examination": {
+            "completion_level": "none",
+            "medical_risk_level": "medium",
+            "completeness_score": 2,
+            "evidence": "대화에서는 운동 검사와 관련된 내용이 전혀 다뤄지지 않았습니다."
+          },
+          "empathy": {
+            "completion_level": "direct",
+            "medical_risk_level": "medium",
+            "completeness_score": 8,
+            "evidence": "환자가 '기억력이 많이 떨어져서 걱정이 돼요'라는 내용을 직접적으로 언급했습니다."
+          },
+          "suspected_diagnosis": {
+            "completion_level": "partial",
+            "medical_risk_level": "high",
+            "completeness_score": 7,
+            "evidence": "환자가 '서서히 기억력이 저하되고, 특히 최근 일이 기억이 나지 않는 것으로 미루어 보아 알츠하이머 치매가 가장 의심이 됩니다.'라는 추정 진단을 언급했습니다."
+          },
+          "differential_diagnosis": {
+            "completion_level": "partial",
+            "medical_risk_level": "medium",
+            "completeness_score": 7,
+            "evidence": "환자의 증상으로 기억력 저하가 주된 이유로 언급되었으며, 추가적인 뇌척수액 증가나 갑상샘 기능 저하와 관련된 질문이 없었지만, 기억력 저하에 대한 질문이 다수 포함되어 있음."
+          },
+          "diagnostic_tests": {
+            "completion_level": "partial",
+            "medical_risk_level": "medium",
+            "completeness_score": 7,
+            "evidence": "환자: 기억력 저하로 많이 걱정이 되셨을 텐데, 정확한 진단을 위해 추가 검사가 필요할 것 같습니다."
+          },
+          "treatment_education": {
+            "completion_level": "partial",
+            "medical_risk_level": "medium",
+            "completeness_score": 6,
+            "evidence": "환자분이 치료 및 교육에 대한 필요성을 인지하고 검사를 받아야 함을 이해하고 있음. 또한, 환자분이 기억력 저하로 인한 걱정을 표현하고, 정확한 진단을 위해 추가 검사가 필요하다는 사실을 받아들이고 있음."
+          },
+          "final_questions": {
+            "completion_level": "partial",
+            "medical_risk_level": "medium",
+            "completeness_score": 6,
+            "evidence": "환자: 검사는 언제 받을 수 있나요?"
+          }
+        },
+        "overall_completeness_score": 6.041666666666667,
+        "critical_gaps": [
+          "사회력",
+          "가족력",
+          "운동 검사"
+        ],
+        "medical_completeness_analysis": "개별 카테고리 평가를 통해 24개 항목 중 3개 항목이 누락되었습니다."
+      },
+      "quality": {
+        "medical_accuracy": 9,
+        "communication_efficiency": 8,
+        "clinical_practicality": 9,
+        "patient_care": 9,
+        "overall_quality_score": 8.75,
+        "quality_analysis": "환자와의 대화에서 증상에 대한 세부 정보를 체계적으로 파악하고, 적절한 질문을 통해 의학적으로 정확한 정보를 수집했습니다. 의학적 정확성과 임상적 실용성 면에서 뛰어난 점수를 받았습니다. 소통 효율성 면에서는 좋은 점수를 받았지만, 몇몇 질문이 중복되는 경향이 있어 조금 더 효율적인 질문 구성이 가능했을 것입니다. 환자 배려 면에서도 세심한 배려를 보여주었으며, 전반적으로 뛰어난 품질을 보여주었습니다."
+      },
+      "appropriateness": {
+        "inappropriate_questions": [],
+        "scenario_specific_score": 9,
+        "patient_profile_score": 8,
+        "time_allocation_score": 7,
+        "overall_appropriateness_score": 8,
+        "appropriateness_analysis": "이 시나리오는 기억력 저하를 주소하는 환자와의 상담 상황을 잘 모방하고 있습니다. 질문들은 대부분 적절하며, 환자의 증상과 이력을 파악하기에 충분한 정보를 수집하고 있습니다. 시간 배분 측면에서는 추가 검사에 대한 안내가 조금 더 빠르게 이루어질 수 있었을 것으로 판단됩니다. 전반적으로 시나리오는 현실적이고 적절한 질문들을 포함하고 있어 의학교육 평가에 적합합니다."
+      },
+      "comprehensive": {
+        "final_completion_rate": 0.6041666666666666,
+        "final_quality_score": 8.75,
+        "weighted_scores": {
+          "completeness_weighted": 24.166666666666668,
+          "quality_weighted": 26.25,
+          "appropriateness_weighted": 16.0,
+          "intent_weighted": 8.5
+        },
+        "detailed_feedback": {
+          "strengths": [
+            "세부 정보를 체계적으로 파악한 점",
+            "의학적 정확성과 임상적 실용성이 뛰어난 점",
+            "환자 배려가 세심한 점"
+          ],
+          "weaknesses": [
+            "운동 검사 미진행",
+            "사회력 및 가족력 미파악",
+            "일부 질문 중복"
+          ],
+          "medical_insights": [
+            "환자의 증상과 이력을 체계적으로 수집한 점",
+            "추가 검사 필요성을 강조한 점"
+          ]
+        },
+        "comprehensive_analysis": "이 학생의 CPX 성적은 중간 수준으로 평가됩니다. 완성도 측면에서는 일부 항목이 누락되었으며, 질적 수준은 높지만 일부 질문 중복이 보입니다. 시나리오 적합성은 높지만 시간 배분에 조금 더 신경 써야 합니다. 의도 측면에서는 환자의 증상을 체계적으로 파악하려는 노력이 보입니다. 강점으로는 세부 정보 수집과 의학적 정확성, 약점으로는 일부 항목 미진행과 질문 중복이 있습니다."
+      }
+    },
+    "evaluation_method": "6단계 의학적 분석",
+    "system_info": {
+      "version": "v2.0",
+      "evaluation_steps": 6
+    }
+  },
+  "conversation_entries": [
+    {
+      "timestamp": "2025-08-18T13:44:25.590042",
+      "text": "안녕하세요, 어떤 증상으로 오셨나요?",
+      "speaker_role": "doctor",
+      "emotion": {
+        "predicted_emotion": "Kind",
+        "confidence": 0.85,
+        "emotion_scores": {
+          "Anxious": 0.1,
+          "Dry": 0.05,
+          "Kind": 0.85
+        }
+      },
+      "audio_file": "dummy_audio_00.wav"
+    },
+    {
+      "timestamp": "2025-08-18T13:44:25.691667",
+      "text": "요즘 기억력이 많이 떨어져서 걱정이 돼요.",
+      "speaker_role": "patient",
+      "emotion": null,
+      "audio_file": "dummy_audio_01.wav"
+    },
+    {
+      "timestamp": "2025-08-18T13:44:25.792277",
+      "text": "언제부터 기억력 저하를 느끼셨나요?",
+      "speaker_role": "doctor",
+      "emotion": {
+        "predicted_emotion": "Kind",
+        "confidence": 0.78,
+        "emotion_scores": {
+          "Anxious": 0.12,
+          "Dry": 0.1,
+          "Kind": 0.78
+        }
+      },
+      "audio_file": "dummy_audio_02.wav"
+    },
+    {
+      "timestamp": "2025-08-18T13:44:25.893037",
+      "text": "한 6개월 전부터 서서히 시작된 것 같아요.",
+      "speaker_role": "patient",
+      "emotion": null,
+      "audio_file": "dummy_audio_03.wav"
+    },
+    {
+      "timestamp": "2025-08-18T13:44:25.993731",
+      "text": "특정 부위의 통증은 없으시죠?",
+      "speaker_role": "doctor",
+      "emotion": {
+        "predicted_emotion": "Dry",
+        "confidence": 0.65,
+        "emotion_scores": {
+          "Anxious": 0.15,
+          "Dry": 0.65,
+          "Kind": 0.2
+        }
+      },
+      "audio_file": "dummy_audio_04.wav"
+    },
+    {
+      "timestamp": "2025-08-18T13:44:26.131878",
+      "text": "네, 특별한 통증은 없어요.",
+      "speaker_role": "patient",
+      "emotion": null,
+      "audio_file": "dummy_audio_05.wav"
+    },
+    {
+      "timestamp": "2025-08-18T13:44:26.233400",
+      "text": "증상이 하루 종일 지속되나요, 아니면 특정 시간에만 나타나나요?",
+      "speaker_role": "doctor",
+      "emotion": {
+        "predicted_emotion": "Kind",
+        "confidence": 0.72,
+        "emotion_scores": {
+          "Anxious": 0.08,
+          "Dry": 0.2,
+          "Kind": 0.72
+        }
+      },
+      "audio_file": "dummy_audio_06.wav"
+    },
+    {
+      "timestamp": "2025-08-18T13:44:26.334165",
+      "text": "하루 종일 그런 것 같아요. 특히 새로운 것을 기억하기 어려워요.",
+      "speaker_role": "patient",
+      "emotion": null,
+      "audio_file": "dummy_audio_07.wav"
+    },
+    {
+      "timestamp": "2025-08-18T13:44:26.436465",
+      "text": "증상이 점점 심해지고 있나요?",
+      "speaker_role": "doctor",
+      "emotion": {
+        "predicted_emotion": "Kind",
+        "confidence": 0.8,
+        "emotion_scores": {
+          "Anxious": 0.05,
+          "Dry": 0.15,
+          "Kind": 0.8
+        }
+      },
+      "audio_file": "dummy_audio_08.wav"
+    },
+    {
+      "timestamp": "2025-08-18T13:44:26.538979",
+      "text": "네, 처음보다는 더 심해진 것 같아요.",
+      "speaker_role": "patient",
+      "emotion": null,
+      "audio_file": "dummy_audio_09.wav"
+    },
+    {
+      "timestamp": "2025-08-18T13:44:26.640006",
+      "text": "스트레스를 받거나 피곤할 때 더 심해지나요?",
+      "speaker_role": "doctor",
+      "emotion": {
+        "predicted_emotion": "Kind",
+        "confidence": 0.75,
+        "emotion_scores": {
+          "Anxious": 0.1,
+          "Dry": 0.15,
+          "Kind": 0.75
+        }
+      },
+      "audio_file": "dummy_audio_10.wav"
+    },
+    {
+      "timestamp": "2025-08-18T13:44:26.740558",
+      "text": "맞아요, 스트레스 받을 때 더 심해지는 것 같아요.",
+      "speaker_role": "patient",
+      "emotion": null,
+      "audio_file": "dummy_audio_11.wav"
+    },
+    {
+      "timestamp": "2025-08-18T13:44:26.841017",
+      "text": "구체적으로 어떤 종류의 기억이 어려우신가요? 최근 일들인가요, 오래된 일들인가요?",
+      "speaker_role": "doctor",
+      "emotion": {
+        "predicted_emotion": "Kind",
+        "confidence": 0.82,
+        "emotion_scores": {
+          "Anxious": 0.03,
+          "Dry": 0.15,
+          "Kind": 0.82
+        }
+      },
+      "audio_file": "dummy_audio_12.wav"
+    },
+    {
+      "timestamp": "2025-08-18T13:44:26.941625",
+      "text": "주로 최근 일들이에요. 어제 뭘 했는지도 잘 기억이 안 나요.",
+      "speaker_role": "patient",
+      "emotion": null,
+      "audio_file": "dummy_audio_13.wav"
+    },
+    {
+      "timestamp": "2025-08-18T13:44:27.042128",
+      "text": "다른 증상도 있나요? 두통이나 어지럼증, 수면 문제는 어떠세요?",
+      "speaker_role": "doctor",
+      "emotion": {
+        "predicted_emotion": "Kind",
+        "confidence": 0.77,
+        "emotion_scores": {
+          "Anxious": 0.08,
+          "Dry": 0.15,
+          "Kind": 0.77
+        }
+      },
+      "audio_file": "dummy_audio_14.wav"
+    },
+    {
+      "timestamp": "2025-08-18T13:44:27.142787",
+      "text": "잠을 잘 못 자고, 가끔 두통도 있어요.",
+      "speaker_role": "patient",
+      "emotion": null,
+      "audio_file": "dummy_audio_15.wav"
+    },
+    {
+      "timestamp": "2025-08-18T13:44:27.244220",
+      "text": "과거에 머리 다친 적이나 뇌 관련 질환을 앓은 적이 있나요?",
+      "speaker_role": "doctor",
+      "emotion": {
+        "predicted_emotion": "Dry",
+        "confidence": 0.68,
+        "emotion_scores": {
+          "Anxious": 0.12,
+          "Dry": 0.68,
+          "Kind": 0.2
+        }
+      },
+      "audio_file": "dummy_audio_16.wav"
+    },
+    {
+      "timestamp": "2025-08-18T13:44:27.347629",
+      "text": "특별한 건 없었던 것 같아요.",
+      "speaker_role": "patient",
+      "emotion": null,
+      "audio_file": "dummy_audio_17.wav"
+    },
+    {
+      "timestamp": "2025-08-18T13:44:27.448703",
+      "text": "이제 간단한 신체 검사를 해보겠습니다. 괜찮으시죠?",
+      "speaker_role": "doctor",
+      "emotion": {
+        "predicted_emotion": "Kind",
+        "confidence": 0.88,
+        "emotion_scores": {
+          "Anxious": 0.02,
+          "Dry": 0.1,
+          "Kind": 0.88
+        }
+      },
+      "audio_file": "dummy_audio_18.wav"
+    },
+    {
+      "timestamp": "2025-08-18T13:44:27.549433",
+      "text": "네, 괜찮습니다.",
+      "speaker_role": "patient",
+      "emotion": null,
+      "audio_file": "dummy_audio_19.wav"
+    },
+    {
+      "timestamp": "2025-08-18T13:44:27.650790",
+      "text": "기억력 저하로 많이 걱정이 되셨을 텐데, 정확한 진단을 위해 추가 검사가 필요할 것 같습니다.",
+      "speaker_role": "doctor",
+      "emotion": {
+        "predicted_emotion": "Kind",
+        "confidence": 0.92,
+        "emotion_scores": {
+          "Anxious": 0.01,
+          "Dry": 0.07,
+          "Kind": 0.92
+        }
+      },
+      "audio_file": "dummy_audio_20.wav"
+    },
+    {
+      "timestamp": "2025-08-18T13:44:27.752682",
+      "text": "네, 알겠습니다. 검사는 언제 받을 수 있나요?",
+      "speaker_role": "patient",
+      "emotion": null,
+      "audio_file": "dummy_audio_21.wav"
+    }
+  ]
+}

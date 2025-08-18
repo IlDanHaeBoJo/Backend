@@ -4,9 +4,7 @@ from pathlib import Path
 import json
 import asyncio
 import aiofiles
-import torch
-import numpy as np
-import librosa
+# SER 관련 import는 제거됨 (ser_service로 분리)
 import logging
 import os
 
@@ -58,16 +56,113 @@ class EvaluationService:
         self.evaluation_dir = Path("evaluation_results")
         self.evaluation_dir.mkdir(parents=True, exist_ok=True)
         
-        # 감정 분석 모델 관련 (SER)
-        self.emotion_model = None
-        self.emotion_processor = None
-        self.emotion_labels = ["Anxious", "Dry", "Kind"]
-        self.ser_model_path = Path("Backend/SER/results_quick_test/adversary_model_augment_v1_epoch_5")  # 모델 경로 설정
+        # SER 관련 코드는 ser_service와 queue로 분리됨
         
         # LangGraph 기반 텍스트 평가 관련
         self.llm = None
         self.workflow = None
         self._initialize_langgraph_components()
+        
+        # RAG 기반 가이드라인 검색기 초기화
+        self.guideline_retriever = None
+        self._initialize_guideline_retriever()
+        
+        # 시나리오별 적용 요소들 정의
+        self.scenario_applicable_elements = self._initialize_scenario_elements()
+
+    def _initialize_guideline_retriever(self):
+        """RAG 기반 가이드라인 검색기 초기화"""
+        try:
+            # RAG 디렉토리의 guideline_retriever를 import
+            import sys
+            from pathlib import Path
+            rag_path = Path(__file__).parent.parent / "RAG"
+            sys.path.append(str(rag_path))
+            
+            from guideline_retriever import GuidelineRetriever
+            
+            # 가이드라인 검색기 초기화
+            index_path = rag_path / "faiss_guideline_index"
+            self.guideline_retriever = GuidelineRetriever(index_path=str(index_path))
+            
+            if self.guideline_retriever.vectorstore:
+                print("✅ RAG 가이드라인 검색기 초기화 완료")
+            else:
+                print("⚠️ RAG 가이드라인 검색기 초기화 실패")
+                self.guideline_retriever = None
+                
+        except Exception as e:
+            print(f"❌ 가이드라인 검색기 초기화 오류: {e}")
+            self.guideline_retriever = None
+
+    def _initialize_scenario_elements(self) -> Dict:
+        """시나리오별 적용 요소들 초기화 - scenarios/ 디렉토리에서 로드"""
+        scenario_elements = {}
+        scenario_dir = Path("scenarios")
+        
+        if not scenario_dir.exists():
+            print("⚠️ scenarios 디렉토리가 없습니다.")
+            return {}
+        
+        for json_file in scenario_dir.glob("*.json"):
+            try:
+                with open(json_file, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    
+                scenario_info = data.get("scenario_info", {})
+                category = scenario_info.get("category", "unknown")
+                
+                # 시나리오 ID를 키로 사용 (예: memory_impairment)
+                scenario_id = category.replace(" ", "_").lower()
+                
+                scenario_elements[scenario_id] = {
+                    "name": category,
+                    "description": scenario_info.get("case_presentation", ""),
+                    "patient_name": scenario_info.get("patient_name", ""),
+                    "primary_diagnosis": scenario_info.get("primary_diagnosis", ""),
+                    "differential_diagnoses": scenario_info.get("differential_diagnoses", []),
+                    "applicable_areas": [
+                        "history_taking",
+                        "physical_examination", 
+                        "patient_education"
+                    ],
+                    "critical_points": self._extract_critical_points_from_scenario(data)
+                }
+                
+                print(f"✅ 시나리오 로드: {category} ({json_file.name})")
+                
+            except json.JSONDecodeError as e:
+                print(f"❌ JSON 파싱 오류 ({json_file.name}): {e}")
+            except Exception as e:
+                print(f"❌ 시나리오 로드 오류 ({json_file.name}): {e}")
+        
+        return scenario_elements
+    
+    def _extract_critical_points_from_scenario(self, scenario_data: Dict) -> List[str]:
+        """시나리오 데이터에서 중요 포인트 추출"""
+        critical_points = []
+        
+        # history_taking에서 중요 포인트 추출
+        history_taking = scenario_data.get("history_taking", {})
+        if "O_onset" in history_taking:
+            critical_points.append("발병 시기와 양상")
+        if "A_associated" in history_taking:
+            critical_points.append("동반 증상 확인")
+        if any(key in history_taking for key in ["past_medical_history", "family_history"]):
+            critical_points.append("과거력 및 가족력")
+        
+        # physical_examination에서 중요 포인트 추출
+        physical_exam = scenario_data.get("physical_examination", {})
+        if "MMSE" in physical_exam:
+            critical_points.append("인지기능 평가")
+        if any(key in physical_exam for key in ["CN_exam", "신경학적검사"]):
+            critical_points.append("신경학적 검사")
+        
+        # 기본값 설정
+        if not critical_points:
+            critical_points = ["병력 청취", "신체 진찰", "환자 교육"]
+        
+        return critical_points
 
     def _load_evaluation_checklists(self) -> Dict:
         """카테고리별 평가 체크리스트 로드"""
@@ -121,10 +216,12 @@ class EvaluationService:
             for subcat_id, subcat_data in area_data.get("subcategories", {}).items():
                 # applicable이 False인 경우 제외
                 if subcat_data.get("applicable", True):
+                    required_elements = subcat_data.get("required_questions", subcat_data.get("required_actions", []))
                     categories.append({
                         "category_id": subcat_id,
                         "name": subcat_data["name"],
-                        "required_questions": subcat_data.get("required_questions", subcat_data.get("required_actions", [])),
+                        "required_questions": required_elements,
+                        "required_elements": required_elements,  # 추가: LangGraph에서 사용
                         "weight": subcat_data.get("weight", 0.1),
                         "area": area_name
                     })
@@ -162,28 +259,17 @@ class EvaluationService:
         return session_id
 
     async def add_conversation_entry(self, session_id: str, audio_file_path: str, 
-                                   text: str, speaker_role: str) -> Dict:
-        """실시간 대화 엔트리 추가 (음성 분석 포함)"""
+                                   text: str, speaker_role: str, emotion_analysis: Optional[Dict] = None) -> Dict:
+        """실시간 대화 엔트리 추가 (SER 결과는 queue에서 전달받음)"""
         if session_id not in self.session_data:
             return {"error": "세션을 찾을 수 없습니다"}
         
         try:
             timestamp = datetime.now()
-            emotion_analysis = None
             
-            # 의사(doctor) 음성인 경우에만 감정 분석 수행
-            if speaker_role == "doctor":
-                await self.load_emotion_model()  # 모델이 로드되지 않았다면 로드
-                
-                if self.emotion_model is not None:
-                    emotion_result = await self.analyze_single_audio(audio_file_path)
-                    if "error" not in emotion_result:
-                        emotion_analysis = {
-                            "predicted_emotion": emotion_result["predicted_emotion"],
-                            "confidence": emotion_result["confidence"],
-                            "emotion_scores": emotion_result["emotion_scores"]
-                        }
-                        print(f"🎭 [{session_id}] 감정 분석 완료: {emotion_analysis['predicted_emotion']} ({emotion_analysis['confidence']:.2f})")
+            # SER 결과 로깅 (queue에서 전달받은 경우)
+            if emotion_analysis:
+                print(f"🎭 [{session_id}] 감정 분석 결과 수신: {emotion_analysis['predicted_emotion']} ({emotion_analysis['confidence']:.2f})")
             
             # 대화 엔트리 생성
             conversation_entry = {
@@ -197,6 +283,8 @@ class EvaluationService:
             # 세션 데이터에 추가
             session = self.session_data[session_id]
             session["conversation_entries"].append(conversation_entry)
+            if "audio_files" not in session:
+                session["audio_files"] = []
             session["audio_files"].append(audio_file_path)
             
             print(f"📝 [{session_id}] 대화 엔트리 추가: {speaker_role} - {text[:50]}...")
@@ -217,152 +305,7 @@ class EvaluationService:
             print(f"❌ [{session_id}] 대화 엔트리 추가 실패: {e}")
             return {"error": str(e)}
 
-    async def load_emotion_model(self):
-        """감정 분석 모델 로드 (서비스 시작 시 한 번만)"""
-        if self.emotion_model is not None:
-            return 
-        
-        try:
-            print("감정 분석 모델 로드 중...")
-            
-            # 모델 경로 확인
-            if self.ser_model_path.exists():
-                from transformers import Wav2Vec2Processor
-                from SER.finetune_direct import custom_Wav2Vec2ForEmotionClassification
-                
-                self.emotion_model = custom_Wav2Vec2ForEmotionClassification.from_pretrained(
-                    str(self.ser_model_path)
-                )
-                self.emotion_processor = Wav2Vec2Processor.from_pretrained(
-                    str(self.ser_model_path)
-                )
-                
-                # 모델을 평가 모드로 설정
-                self.emotion_model.eval()
-                
-                print("✅ 감정 분석 모델 로드 완료")
-            else:
-                print(f"⚠️ 감정 분석 모델을 찾을 수 없음: {self.ser_model_path}")
-                print("   기본 모델을 로드합니다...")
-                
-                from transformers import Wav2Vec2ForSequenceClassification, Wav2Vec2Processor, Wav2Vec2Config
-                
-                model_name = "kresnik/wav2vec2-large-xlsr-korean"
-                label2id = {label: i for i, label in enumerate(self.emotion_labels)}
-                id2label = {i: label for i, label in enumerate(self.emotion_labels)}
-                
-                config = Wav2Vec2Config.from_pretrained(
-                    model_name,
-                    num_labels=len(self.emotion_labels),
-                    label2id=label2id,
-                    id2label=id2label,
-                    finetuning_task="emotion_classification"
-                )
-                
-                self.emotion_model = Wav2Vec2ForSequenceClassification.from_pretrained(
-                    model_name,
-                    config=config,
-                    ignore_mismatched_sizes=True
-                )
-                self.emotion_processor = Wav2Vec2Processor.from_pretrained(model_name)
-                self.emotion_model.eval()
-                
-                print("✅ 기본 감정 분석 모델 로드 완료")
-                
-        except Exception as e:
-            print(f"❌ 감정 분석 모델 로드 실패: {e}")
-            self.emotion_model = None
-            self.emotion_processor = None
-
-    async def analyze_single_audio(self, audio_file_path: str) -> Dict:
-        """단일 음성 파일 감정 분석"""
-        if self.emotion_model is None or self.emotion_processor is None:
-            await self.load_emotion_model()
-            
-        if self.emotion_model is None:
-            return {"error": "감정 분석 모델을 로드할 수 없습니다"}
-        
-        try:
-            # 오디오 파일 존재 확인
-            audio_path = Path(audio_file_path)
-            if not audio_path.exists():
-                return {"error": f"오디오 파일을 찾을 수 없습니다: {audio_file_path}"}
-            
-            # 오디오 전처리
-            audio_data = await self._preprocess_audio(str(audio_path))
-            if audio_data is None:
-                return {"error": "오디오 전처리 실패"}
-            
-            # 감정 분석 수행
-            with torch.no_grad():
-                inputs = {
-                    "input_values": audio_data,  # 이미 배치 차원이 있음 (1, sequence_length)
-                    "attention_mask": None
-                }
-                
-                outputs = self.emotion_model(**inputs)
-                logits = outputs['emotion_logits']
-                
-                # 예측 결과 계산
-                probabilities = torch.nn.functional.softmax(logits, dim=-1)
-                predicted_id = torch.argmax(logits, dim=-1).item()
-                confidence = probabilities[0][predicted_id].item()
-                
-                # 예측 감정 결과
-                predicted_emotion = self.emotion_labels[predicted_id]
-                
-                # 모든 감정별 확률
-                emotion_scores = {
-                    emotion: probabilities[0][i].item() 
-                    for i, emotion in enumerate(self.emotion_labels)
-                }
-                
-                return {
-                    "predicted_emotion": predicted_emotion,
-                    "confidence": confidence,
-                    "emotion_scores": emotion_scores,
-                    "file_path": str(audio_path)
-                }
-                
-        except Exception as e:
-            return {"error": f"감정 분석 중 오류 발생: {e}"}
-
-    async def _preprocess_audio(self, file_path: str) -> Optional[torch.Tensor]:
-        """오디오 전처리 (Wav2Vec2용)"""
-        try:
-            # 오디오 로드 (16kHz로 리샘플링)
-            audio, sr = librosa.load(file_path, sr=16000, res_type='kaiser_fast')
-            
-            # 길이 제한 (최대 10초)
-            max_duration = 10.0
-            target_length = int(16000 * max_duration)
-            
-            if len(audio) > target_length:
-                # 가운데 부분 사용
-                start_idx = np.random.randint(0, len(audio) - target_length + 1)
-                audio = audio[start_idx:start_idx + target_length]
-            elif len(audio) < target_length:
-                # 패딩 추가
-                pad_length = target_length - len(audio)
-                audio = np.pad(audio, (0, pad_length), mode='constant', constant_values=0)
-            
-            # 정규화
-            # if np.max(np.abs(audio)) > 0:
-            #     audio = audio / np.max(np.abs(audio)) * 0.8
-            
-            # Wav2Vec2 processor로 변환
-            inputs = self.emotion_processor(
-                audio,
-                sampling_rate=16000,
-                return_tensors="pt",
-                padding=True
-            )
-            
-            return inputs.input_values.squeeze(0)
-            
-        except Exception as e:
-            print(f"❌ 오디오 전처리 오류: {e}")
-            return None
+    # SER 관련 메서드들은 ser_service로 분리됨
 
 
 
@@ -485,6 +428,59 @@ class EvaluationService:
                 return json.loads(content)
         except Exception as e:
             return {"error": f"평가 결과 로드 실패: {e}"}
+
+    async def evaluate_with_rag_guidelines(self, conversation_log: List[Dict], category: str) -> Dict:
+        """
+        RAG 가이드라인을 사용한 대화 평가
+        
+        Args:
+            conversation_log: 대화 로그
+            category: 평가할 카테고리 (예: "기억력 저하")
+            
+        Returns:
+            RAG 기반 평가 결과
+        """
+        if not self.guideline_retriever:
+            return {
+                "error": "RAG 가이드라인 검색기가 초기화되지 않았습니다.",
+                "category": category,
+                "completeness": 0.0
+            }
+        
+        try:
+            print(f"🔍 [{category}] RAG 가이드라인 기반 평가 시작...")
+            
+            # 가이드라인 기반 완성도 평가
+            evaluation_result = self.guideline_retriever.evaluate_conversation_completeness(
+                conversation_log, category
+            )
+            
+            # 추가 분석을 위한 세부 정보
+            detailed_analysis = {
+                "category": category,
+                "overall_completeness": evaluation_result.get("overall_completeness", 0.0),
+                "area_breakdown": evaluation_result.get("area_results", {}),
+                "completed_count": len(evaluation_result.get("completed_items", [])),
+                "missing_count": len(evaluation_result.get("missing_items", [])),
+                "total_expected_items": len(evaluation_result.get("completed_items", [])) + len(evaluation_result.get("missing_items", [])),
+                "completed_items": evaluation_result.get("completed_items", []),
+                "missing_items": evaluation_result.get("missing_items", []),
+                "evaluation_method": "rag_guideline",
+                "timestamp": datetime.now().isoformat()
+            }
+            
+            print(f"✅ [{category}] RAG 평가 완료 - 완성도: {detailed_analysis['overall_completeness']:.2%}")
+            
+            return detailed_analysis
+            
+        except Exception as e:
+            print(f"❌ [{category}] RAG 가이드라인 평가 실패: {e}")
+            return {
+                "error": str(e),
+                "category": category,
+                "completeness": 0.0,
+                "evaluation_method": "rag_guideline_error"
+            }
 
     # =============================================================================
     # LangGraph 기반 텍스트 평가 기능 (통합)
@@ -854,7 +850,7 @@ class EvaluationService:
 다음 JSON 형식으로 응답하세요:
 {{
     "completion_level": "direct/indirect/partial/none",
-    "medical_risk_level": "high/medium/low", 
+    "medical_risk_level": "high/medium/low",
     "completeness_score": 점수(1-10),
     "evidence": "판단 근거가 되는 대화 내용"
 }}
@@ -1006,36 +1002,48 @@ class EvaluationService:
         appropriateness = state.get("appropriateness_validation", {})
         
         comprehensive_prompt = f"""
-당신은 의학교육 평가 전문가입니다. 다음 Multi-Step 분석 결과들을 종합하여 최종 평가를 수행하세요.
+당신은 의과대학 CPX(Clinical Performance Examination) 평가 전문가입니다. 
+아래 5단계 분석 결과를 바탕으로 학생의 실제 수행도를 객관적으로 평가하세요.
 
-【Step 1 - 의학적 맥락】: {medical_context}
-【Step 2 - 질문 의도】: {question_intent}
-【Step 3 - 의학적 완성도】: {completeness}
-【Step 4 - 질적 수준】: {quality}
-【Step 5 - 시나리오 적합성】: {appropriateness}
+=== 5단계 분석 결과 ===
+【Step 1 - 의학적 맥락 분석】: {medical_context}
+【Step 2 - 질문 의도 분석】: {question_intent}
+【Step 3 - 의학적 완성도 평가】: {completeness}
+【Step 4 - 질적 수준 평가】: {quality}
+【Step 5 - 시나리오 적합성 검증】: {appropriateness}
 
-종합 평가 기준:
-1. 기본 완료율: Step 3의 완성도 기반 (40% 가중치)
-2. 품질 가중치: Step 4의 질적 수준 반영 (30% 가중치)
-3. 적합성 보정: Step 5의 시나리오 적합성 (20% 가중치)
-4. 의도 점수: Step 2의 질문 의도 (10% 가중치)
+=== 점수 산출 공식 ===
+• 완성도 (40%): Step 3의 필수 항목 달성률
+• 품질 (30%): Step 4의 질문/대화 수준  
+• 적합성 (20%): Step 5의 시나리오 부합도
+• 의도 (10%): Step 2의 질문 의도 적절성
 
-반드시 아래의 정확한 JSON 형식으로만 응답하세요:
+점수 계산 방법:
+1. 완성도: 0.0~1.0 범위로 평가 → ×40 (최대 40점)
+2. 품질: 0~10 범위로 평가 → ×3 (최대 30점)  
+3. 적합성: 0.0~1.0 범위로 평가 → ×20 (최대 20점)
+4. 의도: 0.0~1.0 범위로 평가 → ×10 (최대 10점)
+
+최종 점수 = 완성도×40 + 품질×3 + 적합성×20 + 의도×10 (총 100점 만점)
+
+중요: 각 Step의 실제 분석 결과를 바탕으로 객관적 점수를 산출하세요.
+
+반드시 아래 JSON 형식으로만 응답하세요:
 {{
-    "final_completion_rate": 0.8,
-    "final_quality_score": 7.5,
+    "final_completion_rate": 0.0~1.0_사이의_실제_완성도,
+    "final_quality_score": 0~10_사이의_실제_품질점수,
     "weighted_scores": {{
-        "completeness_weighted": 32.0,
-        "quality_weighted": 22.5,
-        "appropriateness_weighted": 16.0,
-        "intent_weighted": 8.5
+        "completeness_weighted": 완성도에_40을_곱한_값,
+        "quality_weighted": 품질에_3을_곱한_값,
+        "appropriateness_weighted": 적합성에_20을_곱한_값,
+        "intent_weighted": 의도에_10을_곱한_값
     }},
     "detailed_feedback": {{
-        "strengths": ["구체적인 강점 1", "구체적인 강점 2"],
-        "weaknesses": ["구체적인 약점 1", "구체적인 약점 2"],
-        "medical_insights": ["의학적 통찰 1", "의학적 통찰 2"]
+        "strengths": ["대화에서_실제_관찰된_강점1", "구체적_강점2", "구체적_강점3"],
+        "weaknesses": ["대화에서_실제_발견된_약점1", "구체적_약점2", "구체적_약점3"],
+        "medical_insights": ["의학적_우수점_또는_부족점1", "의학적_통찰2"]
     }},
-    "comprehensive_analysis": "종합 분석 내용을 여기에 작성"
+    "comprehensive_analysis": "위_5단계_분석을_종합한_상세한_평가_내용(최소_100자)"
 }}
 """
         
@@ -1074,7 +1082,13 @@ class EvaluationService:
         quality_score = evaluation_result["final_quality_score"]
         weighted_scores = evaluation_result["weighted_scores"]
         
-        final_total_score = (completion_rate * 70) + (quality_score * 3)
+        # 프롬프트에서 명시한 공식 사용: (완성도×40) + (품질×3) + (적합성×20) + (의도×10)
+        final_total_score = (
+            weighted_scores.get("completeness_weighted", 0) +
+            weighted_scores.get("quality_weighted", 0) +
+            weighted_scores.get("appropriateness_weighted", 0) +
+            weighted_scores.get("intent_weighted", 0)
+        )
         final_total_score = min(100, max(0, final_total_score))
         
         scores = {

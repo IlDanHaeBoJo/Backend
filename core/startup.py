@@ -17,6 +17,7 @@ from services.llm_service import LLMService
 from services.tts_service import TTSService
 from services.vector_service import VectorService
 from services.evaluation_service import EvaluationService
+from services.ser_service import SERService
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +31,7 @@ class ServiceManager:
         self.tts_service = None
         self.evaluation_service = None
         self.vector_service = None
+        self.ser_service = None
         self._initialized = False
     
     async def initialize_services(self):
@@ -90,17 +92,13 @@ class ServiceManager:
         self.tts_service = TTSService()
         logger.info("✅ TTS 서비스 초기화 완료")
 
-        # Evaluation 서비스 초기화
+        # SER 서비스 초기화 (감정 분석 전담)
+        self.ser_service = SERService()
+        logger.info("✅ SER 서비스 초기화 완료")
+
+        # Evaluation 서비스 초기화 (SER 기능 제거됨)
         self.evaluation_service = EvaluationService()
         logger.info("✅ Evaluation 서비스 초기화 완료")
-        
-        # 감정 분석 모델 로드
-        try:
-            await self.evaluation_service.load_emotion_model()
-            logger.info("✅ 감정 분석 모델 로드 완료")
-        except Exception as e:
-            logger.warning(f"⚠️  감정 분석 모델 로드 실패: {e}")
-            logger.info("💡 평가 기능은 텍스트 분석만 수행됩니다")
 
         
         # 벡터 서비스 초기화 (SQLite 이슈 처리)
@@ -129,6 +127,8 @@ class ServiceManager:
             "speech": self.speech_client is not None,
             "llm": self.llm_service is not None,
             "tts": self.tts_service is not None,
+            "ser": self.ser_service is not None,
+            "evaluation": self.evaluation_service is not None,
             "vector": self.vector_service is not None,
             "initialized": self._initialized
         }
