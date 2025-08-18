@@ -2,9 +2,21 @@ from torch.utils.data import Dataset
 from config import Config
 from typing import List, Dict
 from data_utils import *
+from audiomentations import Compose, PitchShift, TimeStretch, AddGaussianNoise, Shift, Gain, RoomSimulator, HighPassFilter, LowPassFilter
 import json
 import sys
 import torch
+import librosa
+
+from transformers import (
+    Wav2Vec2ForSequenceClassification,
+    Wav2Vec2Processor,
+    Wav2Vec2Config
+)
+
+from config import Config
+
+config = Config
 
 # Character Vocabulary 로드
 try:
@@ -17,6 +29,59 @@ except FileNotFoundError:
     print("❌ 'char_to_id.json'을 찾을 수 없습니다. 먼저 build_vocab.py를 실행하세요.")
     sys.exit(1)
 
+
+# Audio Augmentation -> audiomentaions 오류 지속 발생 .. ?
+AUGMENTATION = Compose([
+    RoomSimulator(p=0.20 * 0.7),
+    HighPassFilter(min_cutoff_freq=60, 
+                   max_cutoff_freq=120, 
+                   p=0.15 * 0.7),
+    LowPassFilter(min_cutoff_freq=3500, 
+                  max_cutoff_freq=6000, 
+                  p=0.15 * 0.7),
+
+    AddGaussianNoise(min_amplitude=0.001, 
+                     max_amplitude=0.006,
+                     p=0.35 * 0.7),
+
+    Gain(min_gain_in_db=-2.0,
+         max_gain_in_db= 2.0, 
+         p=0.35 * 0.7),
+
+    Shift(min_fraction=-0.03,
+          max_fraction= 0.03, p=0.35 * 0.7),
+
+    # 가벼운 프로소디(선택)
+    PitchShift(min_semitones=-1, max_semitones=1, p=0.20 * 0.7),
+    TimeStretch(min_rate=0.98,
+                max_rate=1.02, 
+                p=0.15 * 0.7),
+])
+
+
+def preprocess_audio(file_path: str, processor: Wav2Vec2Processor, is_training: bool = False) -> Optional[torch.Tensor]:
+    """오디오 전처리"""
+    try:
+        # 오디오 로드
+        audio, sr = librosa.load(file_path, sr=config.SAMPLE_RATE)
+
+        if is_training:
+            audio = AUGMENTATION(samples=audio, sample_rate=sr)
+       
+        # 길이 조정
+        target_length = int(config.SAMPLE_RATE * config.MAX_DURATION)
+        if len(audio) > target_length:
+            start_idx = np.random.randint(0, len(audio) - target_length + 1)
+            audio = audio[start_idx:start_idx + target_length]
+        elif len(audio) < target_length:
+            pad_length = target_length - len(audio)
+            audio = np.pad(audio, (0, pad_length), mode='constant')
+        
+        inputs = processor(audio, sampling_rate=config.SAMPLE_RATE, return_tensors="pt", padding=True)
+        return inputs.input_values.squeeze(0)
+    except Exception as e:
+        print(f"오디오 전처리 오류: {file_path}, {e}")
+        return None
 
 class EmotionDataset(Dataset):
     def __init__(self, audio_paths: List[str], labels: List[str], processor: Wav2Vec2Processor, is_training: bool = True, config=Config):
@@ -46,7 +111,7 @@ class EmotionDataset(Dataset):
         
         input_values = preprocess_audio(audio_path, self.processor, self.is_training)
         if input_values is None:
-            input_values = torch.zeros(int(SAMPLE_RATE * MAX_DURATION))
+            input_values = torch.zeros(int(config.SAMPLE_RATE * config.MAX_DURATION))
         
         spk_idx_tensor = None
         if self.spk2id is not None:
@@ -106,7 +171,6 @@ def collate_fn(batch: List[Dict[str, any]]) -> Dict[str, torch.Tensor]:
         'content_labels_lengths': torch.tensor(content_lengths, dtype=torch.long),
         'speaker_ids': speaker_ids,
     }        
-
 
 
 

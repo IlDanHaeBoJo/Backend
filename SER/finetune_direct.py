@@ -16,7 +16,7 @@ import torch.optim as optim
 from torch.utils.data import Dataset, DataLoader
 import numpy as np
 import librosa
-from audiomentations import Compose, PitchShift, TimeStretch, AddGaussianNoise, Shift, Gain, ClippingDistortion
+from audiomentations import Compose, PitchShift, TimeStretch, AddGaussianNoise, Shift, Gain, RoomSimulator, HighPassFilter, LowPassFilter
 from typing import List, Tuple, Optional, Dict, Any, Literal
 from collections import Counter
 import warnings
@@ -34,6 +34,7 @@ from transformers import (
 # 적대적 학습을 위한 custom model 임포트
 from Wav2Vec2_seq_clf import custom_Wav2Vec2ForEmotionClassification
 from data_utils import *
+from datasets import EmotionDataset, collate_fn
 from config import Config
 
 
@@ -52,202 +53,41 @@ SAMPLE_RATE = 16000
 MAX_DURATION = 10.0
 
 
-
-# Audio Augmentation -> audiomentaions 오류 지속 발생 .. ?
-AUGMENTATION = Compose([
-    PitchShift(min_semitones=-2, max_semitones=2, p=0.5),
-    TimeStretch(min_rate=0.9, max_rate=1.1, p=0.5),
-    AddGaussianNoise(min_amplitude=0.001, max_amplitude=0.015, p=0.5),
-    Gain(min_gain_in_db=-6.0, max_gain_in_db=6.0, p=0.5),
-    ClippingDistortion(0, 2.0, p=0.3)
-
-])
-
-
-
-def load_dataset_subset(data_dir: str, max_per_class: int) -> Tuple[List[str], List[str]]:
-    audio_paths = []
-    labels = []
-    emotion_counts = {label: 0 for label in EMOTION_LABELS}
-    
-    person_folders = sorted([f for f in os.listdir(data_dir) if os.path.isdir(os.path.join(data_dir, f))])
-    print(f"📁 발견된 person 폴더: {len(person_folders)}개")
-    
-    for person_folder in tqdm(person_folders, desc="데이터셋 로딩 중"):
-        wav_path = os.path.join(data_dir, person_folder, "wav_48000")
-        if not os.path.exists(wav_path):
-            continue
-        
-        for audio_file in os.listdir(wav_path):
-            if not audio_file.lower().endswith('.wav'):
-                continue
-            
-            emotion_label = get_emotion_from_filename(audio_file)
-            if emotion_label and emotion_counts[emotion_label] < max_per_class:
-                audio_paths.append(os.path.join(wav_path, audio_file))
-                labels.append(emotion_label)
-                emotion_counts[emotion_label] += 1
-        
-        if all(count >= max_per_class for count in emotion_counts.values()):
-            break
-
-    print(f"\n📊 로드된 데이터 분포 (빠른 테스트용):")
-    for emotion, count in emotion_counts.items():
-        percentage = (count / len(audio_paths) * 100) if len(audio_paths) > 0 else 0
-        print(f"  {emotion}: {count}개 ({percentage:.1f}%)")
-            
-    return audio_paths, labels
-
-def preprocess_audio(file_path: str, processor: Wav2Vec2Processor, is_training: bool = False) -> Optional[torch.Tensor]:
-    """오디오 전처리"""
-    try:
-        # 오디오 로드
-        audio, sr = librosa.load(file_path, sr=SAMPLE_RATE)
-
-        if is_training:
-            audio = AUGMENTATION(samples=audio, sample_rate=sr)
-       
-        # 길이 조정
-        target_length = int(SAMPLE_RATE * MAX_DURATION)
-        if len(audio) > target_length:
-            start_idx = np.random.randint(0, len(audio) - target_length + 1)
-            audio = audio[start_idx:start_idx + target_length]
-        elif len(audio) < target_length:
-            pad_length = target_length - len(audio)
-            audio = np.pad(audio, (0, pad_length), mode='constant')
-        
-        inputs = processor(audio, sampling_rate=SAMPLE_RATE, return_tensors="pt", padding=True)
-        return inputs.input_values.squeeze(0)
-    except Exception as e:
-        print(f"오디오 전처리 오류: {file_path}, {e}")
-        return None
+# Character Vocabulary 로드
+try:
+    with open('char_to_id.json', 'r', encoding='utf-8') as f:
+        CHAR2ID = json.load(f)
+    CHAR_VOCAB = list(CHAR2ID.keys())
+    ID2CHAR = {i: char for char, i in CHAR2ID.items()}
+    print(f"✅ Character Vocabulary 로드 완료 ({len(CHAR_VOCAB)}개)")
+except FileNotFoundError:
+    print("❌ 'char_to_id.json'을 찾을 수 없습니다. 먼저 build_vocab.py를 실행하세요.")
+    sys.exit(1)
 
 
-# 데이터 전체를 스캔해서 (경로, 감정, 화자, 스크립트ID) 인덱스 생성
-def build_corpus_index(data_dir: str,
-                       accept_exts={'.wav', '.flac'},
-                       require_emotion=True) -> List[Dict[str, Any]]:
-    """
-    return: [{"path": p, "emotion": e, "speaker": s, "content_id": c}, ...]
-    """
-    index = []
-    speakers = sorted([d for d in os.listdir(data_dir)
-                       if os.path.isdir(os.path.join(data_dir, d))])
-    print(f"📁 화자 폴더 수: {len(speakers)}")
 
-    for spk in tqdm(speakers, desc="인덱스 구축"):
-        spk_dir = os.path.join(data_dir, spk)
-        # 하위 디렉토리를 재귀적으로 탐색 (감정별 폴더/단일 폴더 둘 다 대응)
-        for root, _, files in os.walk(spk_dir):
-            for fn in files:
-                ext = os.path.splitext(fn)[1].lower()
-                if ext not in accept_exts:
-                    continue
-                path = os.path.join(root, fn)
+def build_augment(epoch, total_epochs):
+    scale = 0.6 if epoch < 0.2 * total_epochs else 1.0
 
-                # 감정 라벨
-                emo = infer_emotion_from_path(path)
-                if require_emotion and emo not in EMOTION_LABELS:
-                    # 감정 미매칭 샘플은 제외
-                    continue
+    return Compose([
+        RoomSimulator(p=0.20 * scale),
+        HighPassFilter(min_cutoff_freq=60, max_cutoff_freq=120, p=0.15 * scale),
+        LowPassFilter(min_cutoff_freq=3500, max_cutoff_freq=6000, p=0.15 * scale),
 
-                # 스크립트(대화) ID: 파일명에서 추출 (기존 규칙 그대로)
-                cid = extract_number_from_filename(fn, type="content")
-                if cid is None:
-                    # 스크립트 ID 없으면 제외(불교차 조건을 보장하기 위해)
-                    continue
+        AddGaussianNoise(min_amplitude=0.001, max_amplitude=0.006 if scale<1 else 0.008, p=0.35 * scale),
+        Gain(min_gain_in_db=-2.0 if scale<1 else -3.0,
+             max_gain_in_db= 2.0 if scale<1 else  3.0, p=0.35 * scale),
 
-                index.append({
-                    "path": path,
-                    "emotion": emo,
-                    "speaker": spk,
-                    "content_id": cid
-                })
-    print(f"✅ 인덱스 샘플 수: {len(index)}")
-    return index
+        Shift(min_fraction=-0.03 if scale<1 else -0.05,
+              max_fraction= 0.03 if scale<1 else  0.05, p=0.35 * scale),
 
-def split_speaker_and_content(
-    index: List[Dict[str, Any]],
-    val_content_ratio: float = 0.2,
-    test_content_ratio: float = 0.2,
-    val_speaker_ratio: float = 0.2,
-    test_speaker_ratio: float = 0.2,
-    seed: int = 42,
-    fixed_val_content_ids: Optional[List[int]] = None,
-    fixed_test_content_ids: Optional[List[int]] = None,
-) -> Tuple[Tuple[List[str], List[str]],
-           Tuple[List[str], List[str]],
-           Tuple[List[str], List[str]]]:
-    """
-    index: build_corpus_index() 반환 리스트
-    반환: ((train_paths, train_labels), (val_paths, val_labels), (test_paths, test_labels))
-    """
-    rng = random.Random(seed)
+        PitchShift(min_semitones=-1, max_semitones=1, p=0.20 * scale),
+        TimeStretch(min_rate=0.98 if scale<1 else 0.97,
+                    max_rate=1.02 if scale<1 else 1.03, p=0.15 * scale),
+    ])
 
-    # 전체 스크립트 ID, 화자 목록
-    all_contents = sorted(set([it["content_id"] for it in index]))
-    all_speakers = sorted(set([it["speaker"] for it in index]))
 
-    # --- 2-1) 스크립트(대화) 불교차 세트 만들기
-    if fixed_val_content_ids is not None and fixed_test_content_ids is not None:
-        val_contents = set(fixed_val_content_ids)
-        test_contents = set(fixed_test_content_ids)
-        train_contents = set(all_contents) - val_contents - test_contents
-    else:
-        contents = all_contents[:]
-        rng.shuffle(contents)
-        n_val = max(1, int(len(contents) * val_content_ratio))
-        n_test = max(1, int(len(contents) * test_content_ratio))
-        val_contents = set(contents[:n_val])
-        test_contents = set(contents[n_val:n_val+n_test])
-        train_contents = set(contents[n_val+n_test:])
 
-    # --- 2-2) 화자 불교차 세트 만들기
-    speakers = all_speakers[:]
-    rng.shuffle(speakers)
-    n_val_spk = max(1, int(len(speakers) * val_speaker_ratio))
-    n_test_spk = max(1, int(len(speakers) * test_speaker_ratio))
-    val_speakers = set(speakers[:n_val_spk])
-    test_speakers = set(speakers[n_val_spk:n_val_spk+n_test_spk])
-    train_speakers = set(speakers[n_val_spk+n_test_spk:])
-
-    # --- 2-3) 교집합 제거: 두 조건(화자 세트, 스크립트 세트)을 동시에 만족하는 샘플만 채택
-    train_items = [it for it in index
-                   if it["speaker"] in train_speakers and it["content_id"] in train_contents]
-    val_items   = [it for it in index
-                   if it["speaker"] in val_speakers and it["content_id"] in val_contents]
-    test_items  = [it for it in index
-                   if it["speaker"] in test_speakers and it["content_id"] in test_contents]
-
-    # --- 2-4) 점검 출력
-    def summarize(name, items):
-        spks = sorted(set([it["speaker"] for it in items]))
-        cids = sorted(set([it["content_id"] for it in items]))
-        emo_cnt = Counter([it["emotion"] for it in items])
-        print(f"\n[{name}] 샘플: {len(items)}, 화자: {len(spks)}, 스크립트ID: {len(cids)}")
-        print(f"  감정분포: {dict(emo_cnt)}")
-        print(f"  예시 화자(최대 10): {spks[:10]}")
-        print(f"  예시 스크립트ID(최대 20): {cids[:20]}")
-
-    summarize("TRAIN", train_items)
-    summarize("VAL",   val_items)
-    summarize("TEST",  test_items)
-
-    # --- 2-5) 교차 검증: 화자/스크립트 불교차 여부 확인
-    assert set([it["speaker"] for it in train_items]).isdisjoint(set([it["speaker"] for it in val_items + test_items])), \
-        "Train 화자가 Val/Test와 겹칩니다."
-    assert set([it["speaker"] for it in val_items]).isdisjoint(set([it["speaker"] for it in test_items])), \
-        "Val 화자가 Test와 겹칩니다."
-    assert set([it["content_id"] for it in train_items]).isdisjoint(set([it["content_id"] for it in val_items + test_items])), \
-        "Train 스크립트ID가 Val/Test와 겹칩니다."
-    assert set([it["content_id"] for it in val_items]).isdisjoint(set([it["content_id"] for it in test_items])), \
-        "Val 스크립트ID가 Test와 겹칩니다."
-
-    # --- 2-6) 최종 리스트 변환
-    def to_xy(items):
-        return [it["path"] for it in items], [it["emotion"] for it in items]
-
-    return to_xy(train_items), to_xy(val_items), to_xy(test_items)
 
 
 def create_model_and_processor(freeze_base_model: bool = True, num_speakers: int = 500):
@@ -279,21 +119,23 @@ def create_model_and_processor(freeze_base_model: bool = True, num_speakers: int
 
     return model, processor
 
+
+
 def enable_last_k_blocks(model, last_k: int = 4):
-    # 1) 전체 freeze
     for p in model.wav2vec2.parameters():
         p.requires_grad = False
-    # 2) 마지막 K개 block만 unfreeze
+    
     layers = model.wav2vec2.encoder.layers
     num_layers = len(layers)
     for i in range(num_layers - last_k, num_layers):
         for p in layers[i].parameters():
             p.requires_grad = True
-    # 3) 헤드/적대자/풀러/프로젝터는 항상 학습
+    
     for name, module in model.named_modules():
         if any(k in name for k in ["classifier", "adversary", "speaker_adversary", "pooler", "stats_projector", "projector"]):
             for p in module.parameters():
                 p.requires_grad = True
+
 
 
 def evaluate_model(model, dataloader, device):
@@ -343,23 +185,13 @@ def evaluate_model(model, dataloader, device):
         'true_labels': true_labels
     }
 
+
+
 def train_model(model, train_loader, val_loader, device, num_epochs=3, learning_rate=3e-5):
     """직접 훈련 루프"""
     
     # 옵티마이저 설정 (차등 학습률 적용)
     print("🚀 옵티마이저 설정 (차등 학습률 적용)")
-    # optimizer_grouped_parameters = [
-    #     {
-    #         "params": [p for n, p in model.named_parameters() if "wav2vec2" in n],
-    #         "lr": 1e-5,  # 사전 훈련된 Backbone은 낮은 학습률
-    #     },
-    #     {
-    #         "params": [p for n, p in model.named_parameters() if "wav2vec2" not in n],
-    #         "lr": 1e-4,  # 새로 추가된 Classifier와 Adversary는 높은 학습률
-    #     },
-    # ]
-    # optimizer = optim.AdamW(optimizer_grouped_parameters, weight_decay=0.01)
-
     backbone_params = []
     head_params = []
 
@@ -381,6 +213,7 @@ def train_model(model, train_loader, val_loader, device, num_epochs=3, learning_
     
     # 스케줄러 설정
     total_steps = len(train_loader) * num_epochs
+    accumulation_steps = 16
     scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=total_steps)
     
     best_f1 = 0
@@ -393,6 +226,7 @@ def train_model(model, train_loader, val_loader, device, num_epochs=3, learning_
     
     max_adv = 0.1
     warmup_epochs = 1.0
+    class_weights = torch.tensor([2.0, 1.5, 0.7], dtype=torch.float32).to(device)
 
 
     for epoch in range(num_epochs):
@@ -401,36 +235,38 @@ def train_model(model, train_loader, val_loader, device, num_epochs=3, learning_
         # 훈련
         model.train()
         train_loss = 0
-        for step, batch in enumerate(train_loader):
-            progress = min(1.0, (epoch + step/len(train_loader)) / warmup_epochs)
-            adv_lambda = max_adv * progress
-        train_predictions = []
-        train_true_labels = []
+        optimizer.zero_grad()
 
         progress_bar = tqdm(train_loader, desc=f"Epoch {epoch+1} Training")
-        for batch in tqdm(progress_bar):
-            optimizer.zero_grad()
+        for step, batch in enumerate(progress_bar):
+            current_step = epoch * len(train_loader) + step
+            total_warmup_steps = warmup_epochs * len(train_loader)
+            progress = min(1.0, current_step / total_warmup_steps)
+            current_adv_lambda = max_adv * progress
             
-            
-            # speaker_ids 넘겨줘야 함
             outputs = model(
                 input_values=batch['input_values'].to(device),
                 attention_mask=batch['attention_mask'].to(device),
                 labels=batch['labels'].to(device),
                 content_labels=batch['content_labels'].to(device),
                 content_labels_lengths=batch['content_labels_lengths'].to(device),
-                adv_lambda=0.1,
-                speaker_ids=batch['speaker_ids'].to(device)
+                adv_lambda=current_adv_lambda,
+                speaker_ids=batch['speaker_ids'].to(device),
+                class_weights = class_weights
             )
             
             loss = outputs['loss']
             if loss is None or torch.isnan(loss) or torch.isinf(loss):
                 continue
 
+            loss /= accumulation_steps
             loss.backward()
-            torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-            optimizer.step()
-            scheduler.step()
+
+            if (step + 1) % accumulation_steps == 0:
+              torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+              optimizer.step()
+              scheduler.step()
+              optimizer.zero_grad()
             
             train_loss += loss.item()
             
@@ -439,12 +275,7 @@ def train_model(model, train_loader, val_loader, device, num_epochs=3, learning_
                 'lr': f'{scheduler.get_last_lr()[0]:.6f}'
             })
         
-        # 훈련 결과
         train_loss /= len(train_loader)
-        # train_acc = accuracy_score(train_true_labels, train_predictions)
-        # train_f1 = f1_score(train_true_labels, train_predictions, average='weighted')
-        
-        # print(f"🎯 훈련 결과 - Loss: {train_loss:.4f}, Acc: {train_acc:.4f}, F1: {train_f1:.4f}")
         
         # 검증
         print("📊 검증 중...")
@@ -464,6 +295,9 @@ def train_model(model, train_loader, val_loader, device, num_epochs=3, learning_
         print(f"\n💫 최고 성능 모델 로드 완료 (F1: {best_f1:.4f})")
     
     return model
+
+
+
 
 # --- 메인 실행 함수 ---
 def main():

@@ -35,6 +35,7 @@ class custom_Wav2Vec2ForEmotionClassification(Wav2Vec2ForSequenceClassification)
         content_labels_lengths=None,
         adv_lambda=1.0,
         speaker_ids=None,
+        class_weights = None,
     ):
         outputs = self.wav2vec2(
             input_values,
@@ -62,7 +63,7 @@ class custom_Wav2Vec2ForEmotionClassification(Wav2Vec2ForSequenceClassification)
         loss = None
         if labels is not None and content_labels is not None:
             # 3. 손실 계산
-            loss_emotion_fct = nn.CrossEntropyLoss()
+            loss_emotion_fct = nn.CrossEntropyLoss(weight = class_weights)
             loss_emotion = loss_emotion_fct(emotion_logits.view(-1, self.config.num_labels), labels.view(-1))
             
             # CTCLoss 사용
