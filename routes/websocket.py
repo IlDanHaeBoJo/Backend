@@ -19,7 +19,9 @@ from infra.inmemory_queue import (
     enqueue_conversation_ended,
     start_worker_once,
 )
-
+from services.cpx_service import CpxService
+from core.database import get_db
+        
 logger = logging.getLogger(__name__)
 
 # WebSocket 라우터 생성
@@ -387,6 +389,23 @@ async def websocket_endpoint(websocket: WebSocket, user_id: str):
         default_scenario_id = "3"  # 치매 시나리오
         session["scenario_id"] = default_scenario_id
         session["session_start_time"] = datetime.now().isoformat()
+        
+        # CPX 결과 생성 (평가 시작)
+
+        cpx_result_id = None
+        async for db in get_db():
+            cpx_service = CpxService(db)
+            cpx_result = await cpx_service.create_cpx_result(
+                student_id=int(user_id),
+                patient_name="AI 환자",
+                evaluation_status="진행중"
+            )
+            cpx_result_id = cpx_result.result_id
+            break
+        
+        # 세션에 CPX result_id와 user_id 저장
+        session["cpx_result_id"] = cpx_result_id
+        session["user_id"] = user_id
         
         # LLM 서비스에 시나리오 설정
         service_manager.llm_service.select_scenario(default_scenario_id, user_id)

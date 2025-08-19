@@ -232,7 +232,7 @@ class EvaluationTestClient:
     async def test_conversation_evaluation(self, conversation_data: list):
         """대화 데이터를 이용한 평가 테스트"""
         session_id = f"test_session_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-        user_id = "test_user_001"
+        user_id = "1"
         
         print(f"\n🎯 테스트 세션 시작: {session_id}")
         print(f"📊 총 대화 수: {len(conversation_data)}개")
@@ -240,7 +240,8 @@ class EvaluationTestClient:
         # 세션 시작 (실제 메서드 시그니처에 맞게 수정)
         actual_session_id = await self.evaluation_service.start_evaluation_session(
             user_id=user_id,
-            scenario_id="memory_impairment"
+            scenario_id="memory_impairment",
+            result_id=1  # 테스트용 result_id 설정
         )
         print(f"📋 실제 세션 ID: {actual_session_id}")
         

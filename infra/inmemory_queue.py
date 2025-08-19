@@ -142,6 +142,7 @@ async def _process_event(ev: QueueEvent):
         logger.error(f"Queue event processing error: session={ev.session_id}, type={ev.event_type}, err={e}")
 
 
+
 async def _maybe_finalize_session(session_id: str):
     """세션이 종료 플래그이며 pending이 0이면 평가 마감 수행"""
     st = _session_state.get(session_id)
@@ -150,9 +151,8 @@ async def _maybe_finalize_session(session_id: str):
     if bool(st.get("ended")) and int(st.get("pending", 0)) == 0:
         try:
             result = await service_manager.evaluation_service.end_evaluation_session(session_id)
-            # 저장은 evaluation_service가 파일로 처리. 추가 저장 필요 시 여기에 구현 가능
             print(
-                f"Evaluation finalized for session={session_id}, total_score={result.get('scores', {}).get('total_score', 0)}"
+                f"Evaluation finalized for session={session_id}, total_score={result.get('langgraph_text_analysis', {}).get('scores', {}).get('total_score', 0)}"
             )
         except Exception as e:
             print(f"Finalize error for session={session_id}: {e}")

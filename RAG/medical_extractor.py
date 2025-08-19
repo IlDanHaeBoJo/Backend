@@ -16,11 +16,11 @@ class MedicalExtractor:
         if not os.getenv("OPENAI_API_KEY"):
             raise ValueError("OPENAI_API_KEY 환경변수가 설정되지 않았습니다.")
         
-        from langchain_openai import ChatOpenAI
-        self.llm = ChatOpenAI(
-            model="gpt-4o-mini",
-            temperature=0.1
-        )
+            from langchain_openai import ChatOpenAI
+            self.llm = ChatOpenAI(
+                model="gpt-4o-mini",
+                temperature=0.1
+            )
         
         self.system_prompt = """
 당신은 의료 교재에서 CPX 체크리스트를 생성하는 전문가입니다.

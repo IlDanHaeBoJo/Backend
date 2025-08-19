@@ -4,15 +4,21 @@ from pathlib import Path
 import json
 import asyncio
 import aiofiles
-# SER 관련 import는 제거됨 (ser_service로 분리)
 import logging
 import os
+import sys
+import re
+from collections import Counter
 
 # LangGraph 관련 import
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage, SystemMessage, BaseMessage as AnyMessage
 from langgraph.graph import StateGraph, END
 from langgraph.graph.message import add_messages
+
+# CPX 관련 import
+from services.cpx_service import CpxService
+from core.config import get_db
 
 # CPX 평가 상태 정의 (Multi-Step Reasoning 전용)
 class CPXEvaluationState(TypedDict):
@@ -56,8 +62,6 @@ class EvaluationService:
         self.evaluation_dir = Path("evaluation_results")
         self.evaluation_dir.mkdir(parents=True, exist_ok=True)
         
-        # SER 관련 코드는 ser_service와 queue로 분리됨
-        
         # LangGraph 기반 텍스트 평가 관련
         self.llm = None
         self.workflow = None
@@ -74,8 +78,6 @@ class EvaluationService:
         """RAG 기반 가이드라인 검색기 초기화"""
         try:
             # RAG 디렉토리의 guideline_retriever를 import
-            import sys
-            from pathlib import Path
             rag_path = Path(__file__).parent.parent / "RAG"
             sys.path.append(str(rag_path))
             
@@ -125,8 +127,7 @@ class EvaluationService:
                         "history_taking",
                         "physical_examination", 
                         "patient_education"
-                    ],
-                    "critical_points": self._extract_critical_points_from_scenario(data)
+                    ]
                 }
                 
                 print(f"✅ 시나리오 로드: {category} ({json_file.name})")
@@ -137,32 +138,6 @@ class EvaluationService:
                 print(f"❌ 시나리오 로드 오류 ({json_file.name}): {e}")
         
         return scenario_elements
-    
-    def _extract_critical_points_from_scenario(self, scenario_data: Dict) -> List[str]:
-        """시나리오 데이터에서 중요 포인트 추출"""
-        critical_points = []
-        
-        # history_taking에서 중요 포인트 추출
-        history_taking = scenario_data.get("history_taking", {})
-        if "O_onset" in history_taking:
-            critical_points.append("발병 시기와 양상")
-        if "A_associated" in history_taking:
-            critical_points.append("동반 증상 확인")
-        if any(key in history_taking for key in ["past_medical_history", "family_history"]):
-            critical_points.append("과거력 및 가족력")
-        
-        # physical_examination에서 중요 포인트 추출
-        physical_exam = scenario_data.get("physical_examination", {})
-        if "MMSE" in physical_exam:
-            critical_points.append("인지기능 평가")
-        if any(key in physical_exam for key in ["CN_exam", "신경학적검사"]):
-            critical_points.append("신경학적 검사")
-        
-        # 기본값 설정
-        if not critical_points:
-            critical_points = ["병력 청취", "신체 진찰", "환자 교육"]
-        
-        return critical_points
 
     def _load_evaluation_checklists(self) -> Dict:
         """카테고리별 평가 체크리스트 로드"""
@@ -233,7 +208,7 @@ class EvaluationService:
         completeness = {
             "category_completeness": {},
             "overall_completeness_score": 0.0,
-            "critical_gaps": [],
+            "missing_items": [],
             "medical_completeness_analysis": "카테고리 정보를 찾을 수 없어 기본 평가를 수행합니다."
         }
         
@@ -243,13 +218,14 @@ class EvaluationService:
             "messages": state["messages"] + [HumanMessage(content="Step 3: 기본 완성도 평가 완료")]
         }
 
-    async def start_evaluation_session(self, user_id: str, scenario_id: str) -> str:
+    async def start_evaluation_session(self, user_id: str, scenario_id: str, result_id: Optional[int] = None) -> str:
         """평가 세션 시작"""
         session_id = f"{user_id}_{scenario_id}_{int(datetime.now().timestamp())}"
         
         self.session_data[session_id] = {
             "user_id": user_id,
             "scenario_id": scenario_id,
+            "result_id": result_id,  # CPX result_id 저장
             "start_time": datetime.now(),
             "conversation_entries": [],  # 실시간 대화 데이터
             # "audio_files": [],  # 임시 저장된 wav 파일 경로들
@@ -305,12 +281,6 @@ class EvaluationService:
             print(f"❌ [{session_id}] 대화 엔트리 추가 실패: {e}")
             return {"error": str(e)}
 
-    # SER 관련 메서드들은 ser_service로 분리됨
-
-
-
-
-
     async def end_evaluation_session(self, session_id: str) -> Dict:
         """평가 세션 종료 및 종합 평가 실행"""
         if session_id not in self.session_data:
@@ -323,8 +293,8 @@ class EvaluationService:
         # 종합 평가 실행
         evaluation_result = await self._comprehensive_evaluation(session_id, session)
         
-        # 평가 결과 저장
-        await self._save_evaluation_result(session_id, evaluation_result)
+        # CPX 데이터베이스 업데이트
+        await self._update_cpx_database_after_evaluation(session_id, evaluation_result)
         
         return evaluation_result
 
@@ -583,31 +553,19 @@ class EvaluationService:
         return await self.evaluate_conversation(user_id, scenario_id, conversation_log)
 
     def _create_evaluation_workflow(self):
-        """CPX 평가 워크플로우 생성"""
+        """CPX 평가 워크플로우 생성 (3단계 명확화)"""
         workflow = StateGraph(CPXEvaluationState)
 
         workflow.add_node("initialize", self._initialize_evaluation)
-        workflow.add_node("medical_context", self._analyze_medical_context)
-        workflow.add_node("question_intent", self._analyze_question_intent)
-        workflow.add_node("completeness", self._assess_medical_completeness)
-        workflow.add_node("quality", self._evaluate_question_quality)
-        workflow.add_node("appropriateness", self._validate_scenario_appropriateness)
-        workflow.add_node("comprehensive_evaluation", self._generate_comprehensive_evaluation)
-        workflow.add_node("calculate_scores", self._calculate_final_scores)
-        workflow.add_node("generate_feedback", self._generate_feedback)
-        workflow.add_node("finalize_results", self._finalize_results)
+        workflow.add_node("step1_rag_completeness", self._evaluate_rag_completeness)
+        workflow.add_node("step2_quality_assessment", self._evaluate_quality_assessment)
+        workflow.add_node("step3_comprehensive_results", self._generate_comprehensive_results)
 
         workflow.set_entry_point("initialize")
-        workflow.add_edge("initialize", "medical_context")
-        workflow.add_edge("medical_context", "question_intent")
-        workflow.add_edge("question_intent", "completeness")
-        workflow.add_edge("completeness", "quality")
-        workflow.add_edge("quality", "appropriateness")
-        workflow.add_edge("appropriateness", "comprehensive_evaluation")
-        workflow.add_edge("comprehensive_evaluation", "calculate_scores")
-        workflow.add_edge("calculate_scores", "generate_feedback")
-        workflow.add_edge("generate_feedback", "finalize_results")
-        workflow.add_edge("finalize_results", END)
+        workflow.add_edge("initialize", "step1_rag_completeness")
+        workflow.add_edge("step1_rag_completeness", "step2_quality_assessment")
+        workflow.add_edge("step2_quality_assessment", "step3_comprehensive_results")
+        workflow.add_edge("step3_comprehensive_results", END)
 
         return workflow.compile()
 
@@ -631,111 +589,176 @@ class EvaluationService:
 
 
 
-    def _analyze_medical_context(self, state: CPXEvaluationState) -> CPXEvaluationState:
-        """Step 1: 의학적 맥락 이해"""
-        print(f"🧠 [{state['user_id']}] Step 1: 의학적 맥락 분석 시작")
+    def _evaluate_rag_completeness(self, state: CPXEvaluationState) -> CPXEvaluationState:
+        """1단계: RAG 기반 완성도 평가 (병력청취, 신체진찰, 환자교육)"""
+        print(f"📋 [{state['user_id']}] 1단계: RAG 기반 완성도 평가 시작")
         
+        conversation_text = self._build_conversation_text(state["conversation_log"])
         scenario_id = state["scenario_id"]
-        scenario_info = self.scenario_applicable_elements.get(scenario_id, {})
-        scenario_name = scenario_info.get("name", f"시나리오 {scenario_id}")
         
-        medical_context_prompt = f"""
-당신은 의학교육 전문가입니다. 다음 시나리오의 의학적 맥락을 분석하세요.
-
-【시나리오 정보】: {scenario_name}
-
-다음 관점에서 분석하세요:
-1. 주요 감별진단들과 각각의 위험도
-2. 놓치면 안 되는 Critical 정보들
-3. 시간 효율성 측면에서 우선순위
-4. 환자 안전을 위해 반드시 확인해야 할 요소들
-
-다음 JSON 형식으로 응답하세요:
-{{
-    "primary_differentials": ["주요 감별진단 리스트"],
-    "critical_elements": ["놓치면 위험한 핵심 요소들"],
-    "time_priority": ["시간 제약 하에서 우선순위 요소들"],
-    "safety_concerns": ["환자 안전 관련 필수 확인사항"],
-    "medical_importance_score": 의학적 중요도(1-10)
-}}
-"""
+        # 시나리오에서 카테고리 정보 로드
+        scenario_category = self._get_scenario_category(scenario_id)
+        rag_data = {"category": scenario_category or scenario_id}
         
-        messages = [
-            SystemMessage(content="당신은 경험 많은 의학교육 전문가입니다."),
-            HumanMessage(content=medical_context_prompt)
-        ]
+        # 3개 영역별 RAG 기반 평가
+        areas_evaluation = {
+            "history_taking": self._evaluate_single_area(conversation_text, "병력 청취", rag_data),
+            "physical_examination": self._evaluate_single_area(conversation_text, "신체 진찰", rag_data),
+            "patient_education": self._evaluate_single_area(conversation_text, "환자 교육", rag_data)
+        }
         
-        response = self.llm(messages)
-        result_text = response.content.strip()
+        # 전체 완성도 점수 계산
+        area_scores = [area.get("area_score", 0) for area in areas_evaluation.values()]
+        overall_completeness = sum(area_scores) / (len(area_scores) * 10) if area_scores else 0  # 0-1 스케일
         
-        import re
-        json_match = re.search(r'\{.*\}', result_text, re.DOTALL)
-        if not json_match:
-            raise ValueError(f"Step 1에서 JSON 형식 응답을 찾을 수 없습니다. LLM 응답: {result_text[:100]}")
+        # 전체 완료/누락 항목 수집
+        all_completed_items = []
+        all_missing_items = []
+        for area_data in areas_evaluation.values():
+            all_completed_items.extend(area_data.get("completed_items", []))
+            all_missing_items.extend(area_data.get("missing_items", []))
         
-        medical_context = json.loads(json_match.group())
+        rag_completeness_result = {
+            "category": scenario_category or scenario_id,
+            "overall_completeness": round(overall_completeness, 2),
+            "areas_evaluation": areas_evaluation,
+            "total_completed_items": len(all_completed_items),
+            "total_missing_items": len(all_missing_items),
+            "completed_items": all_completed_items,
+            "missing_items": all_missing_items,
+            "evaluation_method": "rag_three_areas"
+        }
         
-        print(f"✅ [{state['user_id']}] Step 1: 의학적 맥락 분석 완료")
+        print(f"✅ [{state['user_id']}] 1단계: RAG 기반 완성도 평가 완료 - 완성도: {overall_completeness:.2%}")
         
         return {
             **state,
-            "medical_context_analysis": medical_context,
-            "messages": state["messages"] + [HumanMessage(content="Step 1: 의학적 맥락 분석 완료")]
+            "completeness_assessment": rag_completeness_result,
+            "messages": state["messages"] + [HumanMessage(content="1단계: RAG 기반 완성도 평가 완료")]
         }
 
-    def _analyze_question_intent(self, state: CPXEvaluationState) -> CPXEvaluationState:
-        """Step 2: 질문 의도 분석"""
-        print(f"🎯 [{state['user_id']}] Step 2: 질문 의도 분석 시작")
+    
+    def _evaluate_single_area(self, conversation_text: str, area_name: str, rag_data: Dict) -> Dict:
+        """RAG 가이드라인 기반 단일 영역 평가"""
         
-        conversation_text = self._build_conversation_text(state["conversation_log"])
-        medical_context = state.get("medical_context_analysis", {})
+        # 영역명 매핑
+        area_mapping = {
+            "병력 청취": "history_taking",
+            "신체 진찰": "physical_examination", 
+            "환자 교육": "patient_education"
+        }
         
-        question_intent_prompt = f"""
-당신은 의학교육 평가 전문가입니다. 학생의 질문들의 의도를 분석하세요.
-
-【의학적 맥락】: {medical_context}
+        area_key = area_mapping.get(area_name, area_name)
+        
+        # RAG에서 해당 영역의 구체적 평가 기준 가져오기
+        if self.guideline_retriever and hasattr(self.guideline_retriever, 'vectorstore'):
+            try:
+                # 시나리오 카테고리 정보 가져오기
+                scenario_category = rag_data.get("category", "기억력 저하")
+                
+                # 해당 영역의 세부 기준 검색
+                area_query = f"{scenario_category} {area_name} 평가 기준"
+                docs = self.guideline_retriever.vectorstore.similarity_search(area_query, k=3)
+                
+                if docs:
+                    # 검색된 문서에서 해당 영역 정보 추출
+                    area_guidelines = ""
+                    for doc in docs:
+                        if area_key in doc.page_content:
+                            area_guidelines += doc.page_content + "\n"
+                    
+                    if area_guidelines:
+                        area_prompt = f"""
+당신은 의학교육 평가 전문가입니다. 다음 RAG 가이드라인을 기반으로 "{area_name}" 영역을 평가하세요.
 
 【학생-환자 대화】: {conversation_text}
 
-다음 관점에서 질문 의도를 분석하세요:
-1. 의학적 목적의 명확성 - 각 질문이 명확한 의학적 목적을 가지고 있는가?
-2. 체계적 접근성 - 논리적이고 체계적인 순서로 질문했는가?
-3. 환자 중심성 - 환자가 이해하기 쉽고 편안하게 답할 수 있도록 질문했는가?
-4. 시간 효율성 - 제한된 시간 내에서 효율적으로 정보를 수집하려 했는가?
+【RAG 가이드라인 - {area_name} 평가 기준】:
+{area_guidelines}
+
+위 가이드라인의 구체적 항목들을 기준으로 다음을 평가하세요:
+1. 필수 질문/행동들을 얼마나 수행했는가
+2. 가이드라인에 명시된 세부 사항들을 다뤘는가
+3. 의학적 정확성과 체계성을 보였는가
 
 다음 JSON 형식으로 응답하세요:
 {{
-    "medical_purpose_clarity": 의학적 목적 명확성 점수(1-10),
-    "systematic_approach": 체계적 접근성 점수(1-10),
-    "patient_centeredness": 환자 중심성 점수(1-10),
-    "time_efficiency": 시간 효율성 점수(1-10),
-    "overall_intent_score": 전체 의도 점수(1-10),
-    "intent_analysis": "질문 의도에 대한 구체적 분석"
+    "area_score": 점수(1-10),
+    "completeness_level": "excellent/good/fair/poor",
+    "completed_items": ["가이드라인 기준으로 완료된 항목들"],
+    "missing_items": ["가이드라인 기준으로 누락된 항목들"],
+    "strengths": ["RAG 기준으로 잘한 점들"],
+    "improvements": ["RAG 기준으로 개선 필요한 점들"],
+    "guideline_compliance": "가이드라인 준수도에 대한 구체적 분석"
 }}
 """
         
-        messages = [
-            SystemMessage(content="당신은 의학교육 평가 전문가입니다."),
-            HumanMessage(content=question_intent_prompt)
-        ]
+                        try:
+                            messages = [
+                                SystemMessage(content="당신은 의학교육 평가 전문가입니다."),
+                                HumanMessage(content=area_prompt)
+                                                ]
         
-        response = self.llm(messages)
-        result_text = response.content.strip()
+                            response = self.llm(messages)
+                            result_text = response.content.strip()
+                            
+                            json_match = re.search(r'\{.*\}', result_text, re.DOTALL)
+                            if json_match:
+                                result = json.loads(json_match.group())
+                                result["evaluation_method"] = "rag_guideline_based"
+                                return result
+                            else:
+                                raise ValueError(f"RAG 기반 {area_name} 평가에서 JSON 패턴을 찾을 수 없습니다. LLM 응답: {result_text}")
+                        except Exception as e:
+                            print(f"❌ RAG 기반 {area_name} 평가 실패: {e}")
+                            raise e
+            
+            except Exception as e:
+                print(f"❌ RAG 검색 실패 ({area_name}): {e}")
+                raise e
         
-        import re
-        json_match = re.search(r'\{.*\}', result_text, re.DOTALL)
-        if not json_match:
-            raise ValueError(f"Step 2에서 JSON 형식 응답을 찾을 수 없습니다. LLM 응답: {result_text[:100]}")
+        # RAG 실패 시 기본 평가
+        basic_prompt = f"""
+당신은 의학교육 평가 전문가입니다. 다음 대화에서 "{area_name}" 영역의 수행도를 평가하세요.
+
+【대화 내용】: {conversation_text}
+
+【{area_name} 일반 평가 기준】:
+- 완성도: 필요한 항목들을 얼마나 다뤘는가
+- 정확성: 의학적으로 정확한 접근인가  
+- 체계성: 논리적 순서로 진행했는가
+
+다음 JSON 형식으로 응답하세요:
+{{
+    "area_score": 점수(1-10),
+    "completeness_level": "excellent/good/fair/poor",
+    "completed_items": ["완료된 항목들"],
+    "missing_items": ["누락된 항목들"],
+    "strengths": ["강점들"],
+    "improvements": ["개선 필요점들"],
+    "guideline_compliance": "일반적 기준 기반 분석"
+}}
+"""
         
-        question_intent = json.loads(json_match.group())
-        
-        print(f"✅ [{state['user_id']}] Step 2: 질문 의도 분석 완료")
-        
-        return {
-            **state,
-            "question_intent_analysis": question_intent,
-            "messages": state["messages"] + [HumanMessage(content="Step 2: 질문 의도 분석 완료")]
-        }
+        try:
+            messages = [
+                SystemMessage(content="당신은 의학교육 평가 전문가입니다."),
+                HumanMessage(content=basic_prompt)
+            ]
+            
+            response = self.llm(messages)
+            result_text = response.content.strip()
+            
+            json_match = re.search(r'\{.*\}', result_text, re.DOTALL)
+            if json_match:
+                result = json.loads(json_match.group())
+                result["evaluation_method"] = "basic_fallback"
+                return result
+            else:
+                raise ValueError(f"기본 {area_name} 평가에서 JSON 패턴을 찾을 수 없습니다. LLM 응답: {result_text}")
+        except Exception as e:
+            print(f"❌ 기본 {area_name} 영역 평가 실패: {e}")
+            raise e
 
     def _build_conversation_text(self, conversation_log: List[Dict]) -> str:
         """대화 로그를 텍스트로 변환"""
@@ -746,408 +769,171 @@ class EvaluationService:
             conversation_parts.append(f"{speaker}: {content}")
         return "\n".join(conversation_parts)
 
-    def _assess_medical_completeness(self, state: CPXEvaluationState) -> CPXEvaluationState:
-        """Step 3: 의학적 완성도 평가 - 시나리오 카테고리 기반 평가"""
-        print(f"📋 [{state['user_id']}] Step 3: 의학적 완성도 평가 시작")
-        
-        conversation_text = self._build_conversation_text(state["conversation_log"])
-        scenario_id = state["scenario_id"]
-        
-        # 시나리오에서 카테고리 정보 로드
-        scenario_category = self._get_scenario_category(scenario_id)
-        if not scenario_category:
-            print(f"⚠️ 시나리오 {scenario_id}의 카테고리를 찾을 수 없습니다.")
-            return self._create_default_completeness_result(state)
-        
-        # 해당 카테고리의 평가 체크리스트 로드
-        checklist = self.get_evaluation_checklist(scenario_category)
-        if not checklist:
-            print(f"⚠️ '{scenario_category}' 카테고리의 평가 체크리스트를 찾을 수 없습니다.")
-            return self._create_default_completeness_result(state)
-        
-        print(f"✅ 카테고리 '{scenario_category}' 체크리스트 사용")
-        
-        # 평가 영역별로 평가 수행
-        applicable_categories = self._extract_applicable_categories(checklist)
-        
-        # 각 카테고리별로 개별 평가 수행
-        category_results = {}
-        critical_gaps = []
-        for category in applicable_categories:
-            print(f" 📝 [{category['name']}] 개별 평가 중...")
-            result = self._evaluate_single_category(
-                conversation_text, category, scenario_id
-            )
-            category_results[category['category_id']] = result
-            
-            # Critical gap 확인
-            if result.get('completion_level') == 'none':
-                critical_gaps.append(category['name'])
-        
-        # 전체 완성도 점수 계산
-        if category_results:
-            total_score = sum(r.get('completeness_score', 0) for r in category_results.values())
-            overall_score = total_score / len(category_results)
-        else:
-            overall_score = 0
-        
-        completeness = {
-            "category_completeness": category_results,
-            "overall_completeness_score": overall_score,
-            "critical_gaps": critical_gaps,
-            "medical_completeness_analysis": f"개별 카테고리 평가를 통해 {len(category_results)}개 항목 중 {len(critical_gaps)}개 항목이 누락되었습니다."
-        }
-        
-        print(f"✅ [{state['user_id']}] Step 3: 의학적 완성도 평가 완료")
-        
-        return {
-            **state,
-            "completeness_assessment": completeness,
-            "messages": state["messages"] + [HumanMessage(content="Step 3: 의학적 완성도 평가 완료")]
-        }
-
-    def _evaluate_single_category(self, conversation_text: str, category: Dict, scenario_id: str) -> Dict:
-        """단일 카테고리에 대한 집중 평가"""
-        # 카테고리별 일반적 예시 및 유사 표현 추가
-        category_examples = {
-            "외상력": "머리 다침, 교통사고, 낙상, 외상, 부상, 골절 등 외상 경험에 관한 질문",
-            "가족력": "가족 중 질병력, 부모님 병력, 형제자매 질환, 유전적 질환 등에 관한 질문",
-            "과거력": "기존 질병, 과거 병원 치료, 수술 경험, 입원력 등에 관한 질문",
-            "약물력": "현재 복용 약물, 처방약, 일반의약품, 알레르기 등에 관한 질문",
-            "사회력": "흡연, 음주, 직업, 생활습관, 운동 등에 관한 질문",
-            "O (Onset) - 발병 시기": "증상 시작 시점, 언제부터, 얼마나 오래 등 시간 관련 질문. 유사표현: '언제부터', '얼마나 오래', '시작된 시기', '처음 느낀 때'",
-            "C (Character) - 특징": "증상의 성질, 양상, 강도, 정도 등에 관한 질문. 유사표현: '어떤 증상', '어떻게 느껴지는지', '증상의 특징', '어떤 기억력 문제'",
-            "A (Associated symptom) - 동반 증상": "함께 나타나는 증상, 관련 증상 등에 관한 질문. 유사표현: '다른 증상', '함께 나타나는', '동반되는', '추가 증상'",
-            "F (Factor) - 악화/완화요인": "증상을 악화시키는 요인, 완화시키는 요인 등에 관한 질문. 유사표현: '악화되는 때', '나아지는 때', '스트레스', '휴식'",
-            "인지 검사 (간이 MMSE)": "MMSE, 인지검사, 기억력검사, 간이정신상태검사 등. 유사표현: 'MMSE', 'mnse', '엠엠에스이', '인지검사', '기억력 테스트', '간이 검사'",
-            "신경학적 검사": "뇌신경검사, 신경학적 검사, 반사검사 등. 유사표현: '뇌신경', '신경검사', '반사', '신경학적', '뇌 검사'",
-            "운동 검사": "보행검사, 걸음걸이, 운동기능 등. 유사표현: '보행', '걸어보세요', '걸음', '운동', '움직임'"
-        }
-        
-        example_text = category_examples.get(category['name'], "")
-        
-        single_category_prompt = f"""
-당신은 의학교육 평가 전문가입니다. 다음 병력청취 대화에서 "{category['name']}" 항목만 집중적으로 평가해주세요.
-
-【평가 대상】: {category['name']}
-【필수 요소들】: {category['required_elements']}
-【예시 및 유사 표현】: {example_text}
-
-【학생-환자 대화】: {conversation_text}
-
-⚠️ **평가 원칙**:
-- **관대한 평가**: 비슷한 의미의 질문이면 점수 부여
-- **STT 오류 고려**: 발음 차이나 인식 오류 감안 (예: MMSE → mnse, 엠엠에스이)
-- **의도 중심**: 정확한 용어보다는 질문/검사 의도가 있는지 판단
-- **구술 검사**: 실제 검사 수행이 아닌 구술로 검사 언급만 해도 인정
-
-이 대화에서 "{category['name']}" 관련 내용이 어느 정도 다뤄졌는지만 평가하세요:
-1. 직접적 완료: 명시적으로 질문하거나 검사 언급함
-2. 간접적 완료: 대화 맥락에서 정보가 파악됨
-3. 부분적 완료: 불완전하지만 시도함
-4. 미완료: 전혀 다뤄지지 않음
-
-다음 JSON 형식으로 응답하세요:
-{{
-    "completion_level": "direct/indirect/partial/none",
-    "medical_risk_level": "high/medium/low",
-    "completeness_score": 점수(1-10),
-    "evidence": "판단 근거가 되는 대화 내용"
-}}
-"""
-        
-        messages = [
-            SystemMessage(content="당신은 의학교육 평가 전문가입니다."),
-            HumanMessage(content=single_category_prompt)
-        ]
-        
-        response = self.llm(messages)
-        result_text = response.content.strip()
-        
-        import re
-        json_match = re.search(r'\{.*\}', result_text, re.DOTALL)
-        if not json_match:
-            # 평가 실패 시 기본값 반환
-            return {
-                "completion_level": "none",
-                "medical_risk_level": "medium",
-                "completeness_score": 0,
-                "evidence": f"JSON 파싱 실패: {result_text[:100]}"
-            }
-        
-        try:
-            result = json.loads(json_match.group())
-            return result
-        except json.JSONDecodeError:
-            return {
-                "completion_level": "none",
-                "medical_risk_level": "medium",
-                "completeness_score": 0,
-                "evidence": f"JSON 디코딩 실패: {result_text[:100]}"
-            }
-
-    def _evaluate_question_quality(self, state: CPXEvaluationState) -> CPXEvaluationState:
-        """Step 4: 질적 수준 평가"""
-        print(f"⭐ [{state['user_id']}] Step 4: 질적 수준 평가 시작")
-        
-        conversation_text = self._build_conversation_text(state["conversation_log"])
-        
-        quality_prompt = f"""
-당신은 의학교육 평가 전문가입니다. 학생 질문들의 질적 수준을 평가하세요.
-
-【학생-환자 대화】: {conversation_text}
-
-다음 4가지 기준으로 질문 품질을 평가하세요:
-1. 의학적 정확성 (1-10점)
-2. 소통 효율성 (1-10점)  
-3. 임상적 실용성 (1-10점)
-4. 환자 배려 (1-10점)
-
-다음 JSON 형식으로 응답하세요:
-{{
-    "medical_accuracy": 의학적 정확성 점수(1-10),
-    "communication_efficiency": 소통 효율성 점수(1-10),
-    "clinical_practicality": 임상적 실용성 점수(1-10),
-    "patient_care": 환자 배려 점수(1-10),
-    "overall_quality_score": 전체 품질 점수(1-10),
-    "quality_analysis": "질적 수준에 대한 구체적 분석"
-}}
-"""
-        
-        messages = [
-            SystemMessage(content="당신은 의학교육 평가 전문가입니다."),
-            HumanMessage(content=quality_prompt)
-        ]
-        
-        response = self.llm(messages)
-        result_text = response.content.strip()
-        
-        import re
-        json_match = re.search(r'\{.*\}', result_text, re.DOTALL)
-        if not json_match:
-            raise ValueError(f"Step 4에서 JSON 형식 응답을 찾을 수 없습니다. LLM 응답: {result_text[:100]}")
-        
-        quality = json.loads(json_match.group())
-        
-        print(f"✅ [{state['user_id']}] Step 4: 질적 수준 평가 완료")
-        
-        return {
-            **state,
-            "quality_evaluation": quality,
-            "messages": state["messages"] + [HumanMessage(content="Step 4: 질적 수준 평가 완료")]
-        }
-
-    def _validate_scenario_appropriateness(self, state: CPXEvaluationState) -> CPXEvaluationState:
-        """Step 5: 시나리오 적합성 검증"""
-        print(f"🎭 [{state['user_id']}] Step 5: 시나리오 적합성 검증 시작")
+    def _evaluate_quality_assessment(self, state: CPXEvaluationState) -> CPXEvaluationState:
+        print(f"⭐ [{state['user_id']}] 2단계: 품질 평가 시작")
         
         conversation_text = self._build_conversation_text(state["conversation_log"])
         scenario_id = state["scenario_id"]
         scenario_info = self.scenario_applicable_elements.get(scenario_id, {})
-        scenario_name = scenario_info.get("name", f"시나리오 {scenario_id}")
         
-        appropriateness_prompt = f"""
-당신은 의학교육 평가 전문가입니다. 학생의 질문들이 해당 시나리오에 적합했는지 검증하세요.
+        quality_assessment_prompt = f"""
+당신은 의학교육 평가 전문가입니다. 다음 CPX 대화의 품질을 4가지 기준으로 평가하세요.
 
-【시나리오 정보】: {scenario_name}
 【학생-환자 대화】: {conversation_text}
+【시나리오 정보】: {scenario_info.get('name', scenario_id)}
 
-다음 관점에서 시나리오 적합성을 검증하세요:
-1. 부적절한 질문 체크
-2. 적절성 평가
+다음 4가지 품질 기준으로 평가하세요:
+
+【1. 의학적 정확성 (Medical Accuracy)】:
+- 질문의 의학적 타당성과 정확성
+- 진단적 접근의 논리성
+- 의학 용어 사용의 적절성
+- 임상적 판단의 합리성
+
+【2. 의사소통 효율성 (Communication Efficiency)】:
+- 환자가 이해하기 쉬운 언어 사용
+- 질문의 명확성과 구체성
+- 환자 반응에 대한 적절한 후속 질문
+- 대화 흐름의 자연스러움
+
+【3. 전문성 (Professionalism)】:
+- 의료진다운 태도와 예의
+- 환자에 대한 공감과 배려
+- 체계적이고 논리적인 접근
+- 자신감 있는 진료 태도
+
+【4. 시나리오 적합성 (Scenario Appropriateness)】:
+- 주어진 시나리오에 맞는 접근
+- 환자 연령/성별/상황 고려
+- 시간 제약 내 효율적 진행
+- 우선순위에 따른 체계적 접근
+
+각 항목을 1-10점으로 평가하고, 전체 품질 점수를 산출하세요.
 
 다음 JSON 형식으로 응답하세요:
 {{
-    "inappropriate_questions": ["부적절한 질문들과 이유"],
-    "scenario_specific_score": 시나리오 특화 점수(1-10),
-    "patient_profile_score": 환자 프로필 적합성 점수(1-10),
-    "time_allocation_score": 시간 배분 적절성 점수(1-10),
-    "overall_appropriateness_score": 전체 적합성 점수(1-10),
-    "appropriateness_analysis": "시나리오 적합성에 대한 구체적 분석"
+    "medical_accuracy": 의학적정확성점수(1-10),
+    "communication_efficiency": 의사소통효율성점수(1-10),
+    "professionalism": 전문성점수(1-10),
+    "scenario_appropriateness": 시나리오적합성점수(1-10),
+    "overall_quality_score": 전체품질점수(1-10),
+    "quality_strengths": ["품질 면에서 우수한 점들"],
+    "quality_improvements": ["품질 면에서 개선이 필요한 점들"],
+    "detailed_analysis": {{
+        "medical_accuracy_detail": "의학적 정확성에 대한 구체적 분석",
+        "communication_detail": "의사소통에 대한 구체적 분석",
+        "professionalism_detail": "전문성에 대한 구체적 분석",
+        "scenario_fit_detail": "시나리오 적합성에 대한 구체적 분석"
+    }}
 }}
 """
-        
-        messages = [
-            SystemMessage(content="당신은 의학교육 평가 전문가입니다."),
-            HumanMessage(content=appropriateness_prompt)
-        ]
-        
-        response = self.llm(messages)
-        result_text = response.content.strip()
-        
-        import re
-        json_match = re.search(r'\{.*\}', result_text, re.DOTALL)
-        if not json_match:
-            raise ValueError(f"Step 5에서 JSON 형식 응답을 찾을 수 없습니다. LLM 응답: {result_text[:100]}")
-        
-        appropriateness = json.loads(json_match.group())
-        
-        print(f"✅ [{state['user_id']}] Step 5: 시나리오 적합성 검증 완료")
-        
-        return {
-            **state,
-            "appropriateness_validation": appropriateness,
-            "messages": state["messages"] + [HumanMessage(content="Step 5: 시나리오 적합성 검증 완료")]
-        }
-
-    def _generate_comprehensive_evaluation(self, state: CPXEvaluationState) -> CPXEvaluationState:
-        """Step 6: 종합 평가 및 최종 점수 계산"""
-        print(f"🎯 [{state['user_id']}] Step 6: 종합 평가 시작")
-        
-        # Multi-Step 결과들 수집
-        medical_context = state.get("medical_context_analysis", {})
-        question_intent = state.get("question_intent_analysis", {})
-        completeness = state.get("completeness_assessment", {})
-        quality = state.get("quality_evaluation", {})
-        appropriateness = state.get("appropriateness_validation", {})
-        
-        comprehensive_prompt = f"""
-당신은 의과대학 CPX(Clinical Performance Examination) 평가 전문가입니다. 
-아래 5단계 분석 결과를 바탕으로 학생의 실제 수행도를 객관적으로 평가하세요.
-
-=== 5단계 분석 결과 ===
-【Step 1 - 의학적 맥락 분석】: {medical_context}
-【Step 2 - 질문 의도 분석】: {question_intent}
-【Step 3 - 의학적 완성도 평가】: {completeness}
-【Step 4 - 질적 수준 평가】: {quality}
-【Step 5 - 시나리오 적합성 검증】: {appropriateness}
-
-=== 점수 산출 공식 ===
-• 완성도 (40%): Step 3의 필수 항목 달성률
-• 품질 (30%): Step 4의 질문/대화 수준  
-• 적합성 (20%): Step 5의 시나리오 부합도
-• 의도 (10%): Step 2의 질문 의도 적절성
-
-점수 계산 방법:
-1. 완성도: 0.0~1.0 범위로 평가 → ×40 (최대 40점)
-2. 품질: 0~10 범위로 평가 → ×3 (최대 30점)  
-3. 적합성: 0.0~1.0 범위로 평가 → ×20 (최대 20점)
-4. 의도: 0.0~1.0 범위로 평가 → ×10 (최대 10점)
-
-최종 점수 = 완성도×40 + 품질×3 + 적합성×20 + 의도×10 (총 100점 만점)
-
-중요: 각 Step의 실제 분석 결과를 바탕으로 객관적 점수를 산출하세요.
-
-반드시 아래 JSON 형식으로만 응답하세요:
-{{
-    "final_completion_rate": 0.0~1.0_사이의_실제_완성도,
-    "final_quality_score": 0~10_사이의_실제_품질점수,
-    "weighted_scores": {{
-        "completeness_weighted": 완성도에_40을_곱한_값,
-        "quality_weighted": 품질에_3을_곱한_값,
-        "appropriateness_weighted": 적합성에_20을_곱한_값,
-        "intent_weighted": 의도에_10을_곱한_값
-    }},
-    "detailed_feedback": {{
-        "strengths": ["대화에서_실제_관찰된_강점1", "구체적_강점2", "구체적_강점3"],
-        "weaknesses": ["대화에서_실제_발견된_약점1", "구체적_약점2", "구체적_약점3"],
-        "medical_insights": ["의학적_우수점_또는_부족점1", "의학적_통찰2"]
-    }},
-    "comprehensive_analysis": "위_5단계_분석을_종합한_상세한_평가_내용(최소_100자)"
-}}
-"""
-        
-        messages = [
-            SystemMessage(content="당신은 경험 많은 의학교육 평가 전문가입니다."),
-            HumanMessage(content=comprehensive_prompt)
-        ]
-        
-        response = self.llm(messages)
-        result_text = response.content.strip()
-        
-        import re
-        json_match = re.search(r'\{.*\}', result_text, re.DOTALL)
-        if not json_match:
-            raise ValueError(f"Step 6에서 JSON 형식 응답을 찾을 수 없습니다. LLM 응답: {result_text[:100]}")
         
         try:
-            comprehensive = json.loads(json_match.group())
-        except json.JSONDecodeError as e:
-            raise ValueError(f"Step 6에서 JSON 파싱 실패: {e}")
-        
-        print(f"✅ [{state['user_id']}] Step 6: 종합 평가 완료")
-        
-        return {
-            **state,
-            "comprehensive_evaluation": comprehensive,
-            "messages": state["messages"] + [HumanMessage(content="Step 6: 종합 평가 완료")]
-        }
+            messages = [
+                SystemMessage(content="당신은 의학교육 평가 전문가입니다."),
+                HumanMessage(content=quality_assessment_prompt)
+            ]
+            
+            response = self.llm(messages)
+            result_text = response.content.strip()
+            
+            json_match = re.search(r'\{.*\}', result_text, re.DOTALL)
+            if json_match:
+                quality_assessment = json.loads(json_match.group())
+                
+                print(f"✅ [{state['user_id']}] 2단계: 품질 평가 완료 - 종합 점수: {quality_assessment.get('overall_quality_score', 0)}")
+                
+                return {
+                    **state,
+                    "quality_evaluation": quality_assessment,
+                    "messages": state["messages"] + [HumanMessage(content="2단계: 품질 평가 완료")]
+                }
+            else:
+                raise ValueError(f"품질 평가에서 JSON 패턴을 찾을 수 없습니다. LLM 응답: {result_text}")
+        except Exception as e:
+            print(f"❌ [{state['user_id']}] 품질 평가 실패: {e}")
+            raise e
 
-    def _calculate_final_scores(self, state: CPXEvaluationState) -> CPXEvaluationState:
-        """최종 점수 계산"""
-        print(f"🧮 [{state['user_id']}] 최종 점수 계산 시작")
+    def _generate_comprehensive_results(self, state: CPXEvaluationState) -> CPXEvaluationState:
+        """3단계: 종합 평가 및 최종 결과 생성"""
+        print(f"🎯 [{state['user_id']}] 3단계: 종합 평가 시작")
         
-        evaluation_result = state["comprehensive_evaluation"]
-        completion_rate = evaluation_result["final_completion_rate"]
-        quality_score = evaluation_result["final_quality_score"]
-        weighted_scores = evaluation_result["weighted_scores"]
+        # 1단계와 2단계 결과 수집
+        rag_completeness = state.get("completeness_assessment", {})
+        quality_assessment = state.get("quality_evaluation", {})
         
-        # 프롬프트에서 명시한 공식 사용: (완성도×40) + (품질×3) + (적합성×20) + (의도×10)
-        final_total_score = (
-            weighted_scores.get("completeness_weighted", 0) +
-            weighted_scores.get("quality_weighted", 0) +
-            weighted_scores.get("appropriateness_weighted", 0) +
-            weighted_scores.get("intent_weighted", 0)
-        )
-        final_total_score = min(100, max(0, final_total_score))
+        # 최종 점수 계산 (가중치: 완성도 60%, 품질 40%)
+        completeness_score = rag_completeness.get("overall_completeness", 0.5) * 10  # 0-10 스케일로 변환
+        quality_score = quality_assessment.get("overall_quality_score", 6)
         
-        scores = {
-            "total_score": round(final_total_score, 1),
-            "completion_rate": round(completion_rate, 2),
+        # 가중치 적용: 완성도 60%, 품질 40%
+        final_score = (completeness_score * 0.6) + (quality_score * 0.4)
+        final_score = min(10, max(0, final_score))  # 0-10 범위로 제한
+        
+        # 종합 피드백 생성
+        strengths = []
+        improvements = []
+        
+        # 1단계 RAG 평가에서 강점/개선점 수집
+        for area_name, area_data in rag_completeness.get("areas_evaluation", {}).items():
+            if isinstance(area_data, dict):
+                strengths.extend(area_data.get("strengths", []))
+                improvements.extend(area_data.get("improvements", []))
+        
+        # 2단계 품질 평가에서 강점/개선점 추가
+        strengths.extend(quality_assessment.get("quality_strengths", []))
+        improvements.extend(quality_assessment.get("quality_improvements", []))
+        
+        # 상세 분석 생성
+        detailed_analysis_parts = []
+        detailed_analysis_parts.append(f"【완성도 평가】 RAG 기반 평가 결과 {rag_completeness.get('overall_completeness', 0):.1%} 완성")
+        detailed_analysis_parts.append(f"【품질 평가】 4가지 품질 기준 평균 {quality_score:.1f}점")
+        
+        if rag_completeness.get("total_completed_items", 0) > 0:
+            detailed_analysis_parts.append(f"총 {rag_completeness.get('total_completed_items', 0)}개 항목 완료")
+        
+        if rag_completeness.get("total_missing_items", 0) > 0:
+            detailed_analysis_parts.append(f"{rag_completeness.get('total_missing_items', 0)}개 항목 누락")
+        
+        comprehensive_result = {
+            "final_score": round(final_score, 1),
+            "grade": self._calculate_grade(final_score * 10),  # 100점 스케일로 변환
+            "score_breakdown": {
+                "completeness_score": round(completeness_score, 1),
             "quality_score": round(quality_score, 1),
-            "weighted_breakdown": {
-                "completeness_score": round(weighted_scores["completeness_weighted"], 1),
-                "quality_score": round(weighted_scores["quality_weighted"], 1),
-                "appropriateness_score": round(weighted_scores["appropriateness_weighted"], 1),
-                "intent_score": round(weighted_scores["intent_weighted"], 1)
+                "weighted_completeness": round(completeness_score * 0.6, 1),
+                "weighted_quality": round(quality_score * 0.4, 1)
             },
-            "grade": self._calculate_grade(final_total_score)
+            "detailed_feedback": {
+                "strengths": list(set(strengths))[:5] if strengths else ["평가를 성실히 완료했습니다"],
+                "improvements": list(set(improvements))[:5] if improvements else ["지속적인 학습과 연습이 필요합니다"],
+                "overall_analysis": " | ".join(detailed_analysis_parts)
+            },
+            "evaluation_summary": {
+                "method": "3단계 RAG+품질 평가",
+                "steps_completed": 3,
+                "completeness_rate": rag_completeness.get("overall_completeness", 0),
+                "quality_details": quality_assessment.get("detailed_analysis", {}),
+                "total_items_evaluated": rag_completeness.get("total_completed_items", 0) + rag_completeness.get("total_missing_items", 0)
+            }
         }
         
-        print(f"✅ [{state['user_id']}] 최종 점수 계산 완료 - 총점: {final_total_score:.1f}")
+        print(f"✅ [{state['user_id']}] 3단계: 종합 평가 완료 - 최종 점수: {final_score:.1f}/10 ({comprehensive_result['grade']})")
         
         return {
             **state,
-            "final_scores": scores,
-            "messages": state["messages"] + [HumanMessage(content=f"최종 점수 계산 완료 - 총점: {final_total_score:.1f}점")]
+            "comprehensive_evaluation": comprehensive_result,
+            "final_scores": {
+                "total_score": round(final_score * 10, 1),  # 100점 스케일
+                "completion_rate": rag_completeness.get("overall_completeness", 0.5),
+                "quality_score": quality_score,
+                "grade": comprehensive_result["grade"]
+            },
+            "feedback": comprehensive_result["detailed_feedback"],
+            "messages": state["messages"] + [HumanMessage(content=f"3단계: 종합 평가 완료 - {final_score:.1f}점 ({comprehensive_result['grade']})")]
         }
 
-    def _generate_feedback(self, state: CPXEvaluationState) -> CPXEvaluationState:
-        """피드백 생성"""
-        print(f"📝 [{state['user_id']}] 피드백 생성 시작")
-        
-        evaluation_result = state["comprehensive_evaluation"]
-        final_scores = state["final_scores"]
-        evaluation_feedback = evaluation_result["detailed_feedback"]
-        
-        feedback = {
-            "overall_feedback": f"6단계 의학적 분석을 통한 종합 평가입니다. 총점: {final_scores['total_score']}점",
-            "strengths": evaluation_feedback["strengths"],
-            "weaknesses": evaluation_feedback["weaknesses"],
-            "medical_insights": evaluation_feedback["medical_insights"],
-            "comprehensive_analysis": evaluation_result["comprehensive_analysis"],
-            "evaluation_method": "6단계 의학적 분석"
-        }
-        
-        print(f"✅ [{state['user_id']}] 피드백 생성 완료")
-        
-        return {
-            **state,
-            "feedback": feedback,
-            "messages": state["messages"] + [HumanMessage(content="피드백 생성 완료")]
-        }
 
-    def _finalize_results(self, state: CPXEvaluationState) -> CPXEvaluationState:
-        """결과 최종화"""
-        print(f"🎯 [{state['user_id']}] 평가 결과 최종화")
-        
-        total_score = state.get('final_scores', {}).get('total_score', 0)
-        print(f"🎉 [{state['user_id']}] CPX 평가 완료 - 총점: {total_score}점")
-        
-        return {
-            **state,
-            "messages": state["messages"] + [HumanMessage(content="CPX 평가가 성공적으로 완료되었습니다.")]
-        }
 
     def _calculate_grade(self, score: float) -> str:
         """점수에 따른 등급 계산"""
@@ -1188,7 +974,6 @@ class EvaluationService:
             emotions = [e for e in emotions if e]  # None 제거
             
             if emotions:
-                from collections import Counter
                 emotion_counts = Counter(emotions)
                 total_emotional_entries = len(emotions)
                 
@@ -1240,6 +1025,29 @@ class EvaluationService:
                 "balanced_interaction": 0.3 <= conversation_pattern["conversation_balance"] <= 3.0
             }
         }
+
+    async def _update_cpx_database_after_evaluation(self, session_id: str, evaluation_result: dict):
+        """평가 완료 후 CPX Details만 업데이트"""
+        try:
+            session = self.session_data[session_id]
+            result_id = session["result_id"]
+            user_id = session["user_id"]
+            
+            # CPX Details만 업데이트 (시스템 평가 데이터)
+            async for db in get_db():
+                cpx_service = CpxService(db)
+                
+                await cpx_service.update_cpx_details(
+                    result_id=result_id,
+                    user_id=int(user_id),
+                    system_evaluation_data=evaluation_result
+                )
+                
+                print(f"✅ CPX Details 업데이트 완료: result_id={result_id}, session_id={session_id}")
+                break
+                
+        except Exception as e:
+            print(f"❌ CPX Details 업데이트 실패: {e}")
 
     async def _cleanup_audio_files(self, audio_file_path: str):
         """평가 완료 후 임시 WAV 파일들만 삭제 (TTS 캐시 파일은 보존)"""
