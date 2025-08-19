@@ -16,7 +16,7 @@ import torch.optim as optim
 from torch.utils.data import Dataset, DataLoader
 import numpy as np
 import librosa
-from audiomentations import Compose, PitchShift, TimeStretch, AddGaussianNoise, Shift, Gain, ClippingDistortion
+from audiomentations import Compose, PitchShift, TimeStretch, AddGaussianNoise, Shift, Gain, RoomSimulator, HighPassFilter, LowPassFilter
 from typing import List, Tuple, Optional, Dict, Any, Literal
 from collections import Counter
 import warnings
@@ -49,11 +49,21 @@ SAMPLE_RATE = 16000
 MAX_DURATION = 10.0
 
 AUGMENTATION = Compose([
-    PitchShift(min_semitones=-2, max_semitones=2, p=0.5),
-    TimeStretch(min_rate=0.9, max_rate=1.1, p=0.5),
-    AddGaussianNoise(min_amplitude=0.001, max_amplitude=0.015, p=0.5),
-    Gain(min_gain_in_db=-6.0, max_gain_in_db=6.0, p=0.5),
-    ClippingDistortion(0, 2.0, p=0.3)
+    RoomSimulator(p=0.20 * 0.7),
+    HighPassFilter(min_cutoff_freq=60, max_cutoff_freq=120, p=0.15 * 0.7),
+    LowPassFilter(min_cutoff_freq=3500, max_cutoff_freq=6000, p=0.15 * 0.7),
+
+    AddGaussianNoise(min_amplitude=0.001, max_amplitude=0.006 if 0.7<1 else 0.008, p=0.35 * 0.7),
+    Gain(min_gain_in_db=-2.0 if 0.7<1 else -3.0,
+        max_gain_in_db= 2.0 if 0.7<1 else  3.0, p=0.35 * 0.7),
+
+    Shift(min_shift=-0.03 if 0.7<1 else -0.05,
+        max_shift= 0.03 if 0.7<1 else  0.05, p=0.35 * 0.7),
+
+    # 가벼운 프로소디(선택)
+    PitchShift(min_semitones=-1, max_semitones=1, p=0.20 * 0.7),
+    TimeStretch(min_rate=0.98 if 0.7<1 else 0.97,
+                max_rate=1.02 if 0.7<1 else 1.03, p=0.15 * 0.7),
 
 ])
 
@@ -554,6 +564,10 @@ def train_model(model, train_loader, val_loader, device, num_epochs=3, learning_
             # pooler, stats_projector, projector(부모), classifier, adversaries 등
             head_params.append(p)
 
+    for n, p in model.adversary.named_parameters():
+        p.requires_grad = False
+    model.adversary.eval()
+
     optimizer = optim.AdamW(
         [
             {"params": backbone_params, "lr": 5e-6, "weight_decay": 0.01},
@@ -573,8 +587,11 @@ def train_model(model, train_loader, val_loader, device, num_epochs=3, learning_
     print(f"   배치 수: {len(train_loader)}")
     print(f"   총 스텝: {total_steps}")
     
-    max_adv = 0.1
+    max_adv = 0.05
     warmup_epochs = 1.0
+    warmup_frac = 0.1           # 전체 스텝의 10%만 웜업
+    warmup_steps = max(1, int(total_steps * warmup_frac))
+    global_step = 0
 
 
     for epoch in range(num_epochs):
@@ -582,15 +599,17 @@ def train_model(model, train_loader, val_loader, device, num_epochs=3, learning_
         
         # 훈련
         model.train()
-        train_loss = 0
-        for step, batch in enumerate(train_loader):
-            progress = min(1.0, (epoch + step/len(train_loader)) / warmup_epochs)
-            adv_lambda = max_adv * progress
-        train_predictions = []
-        train_true_labels = []
+        train_loss = 0.0
 
         progress_bar = tqdm(train_loader, desc=f"Epoch {epoch+1} Training")
-        for batch in tqdm(progress_bar):
+        for step, batch in enumerate(progress_bar):
+            if global_step < warmup_steps:
+                adv_lambda = max_adv * (global_step / warmup_steps)
+            else:
+                adv_lambda = max_adv
+            
+            global_step += 1
+            
             optimizer.zero_grad()
             
             
@@ -599,9 +618,9 @@ def train_model(model, train_loader, val_loader, device, num_epochs=3, learning_
                 input_values=batch['input_values'].to(device),
                 attention_mask=batch['attention_mask'].to(device),
                 labels=batch['labels'].to(device),
-                content_labels=batch['content_labels'].to(device),
-                content_labels_lengths=batch['content_labels_lengths'].to(device),
-                adv_lambda=0.1,
+                content_labels=None,
+                content_labels_lengths=None,
+                adv_lambda=adv_lambda,
                 speaker_ids=batch['speaker_ids'].to(device)
             )
             
@@ -618,15 +637,13 @@ def train_model(model, train_loader, val_loader, device, num_epochs=3, learning_
             
             progress_bar.set_postfix({
                 'loss': f'{loss.item():.4f}',
-                'lr': f'{scheduler.get_last_lr()[0]:.6f}'
+                'lr_backbone': f'{scheduler.get_last_lr()[0]:.6f}',
+                'lr_head': f'{scheduler.get_last_lr()[1]:.6f}',
+                "adv": f'{adv_lambda:.3f}'
             })
         
         # 훈련 결과
         train_loss /= len(train_loader)
-        # train_acc = accuracy_score(train_true_labels, train_predictions)
-        # train_f1 = f1_score(train_true_labels, train_predictions, average='weighted')
-        
-        # print(f"🎯 훈련 결과 - Loss: {train_loss:.4f}, Acc: {train_acc:.4f}, F1: {train_f1:.4f}")
         
         # 검증
         print("📊 검증 중...")
@@ -754,7 +771,7 @@ def main():
         os.makedirs(output_dir, exist_ok=True)
         
         # 모델 상태 저장 (transformers 방식)
-        model_save_path = os.path.join(output_dir, "adversary_content_speaker_model_augment_v2_epoch_5_last_k_4")
+        model_save_path = os.path.join(output_dir, "adversary_no_content_speaker_model_augment_v3_epoch_5_last_k_4")
         os.makedirs(model_save_path, exist_ok=True)
         
         # 모델 저장
