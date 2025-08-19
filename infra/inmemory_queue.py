@@ -91,25 +91,37 @@ async def enqueue_conversation_ended(session_id: str, user_id: str, seq: int):
 
 
 async def _process_event(ev: QueueEvent):
-    """각 이벤트를 평가 서비스로 전달. patient인 경우 SER 포함(add_conversation_entry 내부 수행).
+    """각 이벤트를 처리. doctor 음성인 경우 SER 분석 후 evaluation 서비스로 전달.
     처리 성공 시 pending 감소.
     """
     try:
-        if ev.event_type == "doctor":
+        emotion_analysis = None
+        
+        # doctor 음성인 경우 SER 분석 수행
+        if ev.event_type == "doctor" and ev.audio_path:
+            try:
+                emotion_result = await service_manager.ser_service.analyze_emotion(ev.audio_path)
+                if emotion_result.get("success"):
+                    emotion_analysis = {
+                        "predicted_emotion": emotion_result["predicted_emotion"],
+                        "confidence": emotion_result["confidence"],
+                        "emotion_scores": emotion_result["emotion_scores"]
+                    }
+                    logger.info(f"🎭 [{ev.session_id}] SER 분석 완료: {emotion_analysis['predicted_emotion']} ({emotion_analysis['confidence']:.2f})")
+                else:
+                    logger.warning(f"⚠️ [{ev.session_id}] SER 분석 실패: {emotion_result.get('error', 'Unknown error')}")
+            except Exception as ser_error:
+                logger.error(f"❌ [{ev.session_id}] SER 분석 오류: {ser_error}")
+                # SER 실패해도 평가는 계속 진행
+        
+        # evaluation 서비스로 전달 (SER 결과 포함)
+        if ev.event_type in ("doctor", "patient"):
             await service_manager.evaluation_service.add_conversation_entry(
                 session_id=ev.session_id,
                 audio_file_path=ev.audio_path or "",
                 text=ev.text or "",
-                speaker_role="doctor",
-            )
-            _session_state[ev.session_id]["pending"] -= 1
-
-        elif ev.event_type == "patient":
-            await service_manager.evaluation_service.add_conversation_entry(
-                session_id=ev.session_id,
-                audio_file_path=ev.audio_path or "",
-                text=ev.text or "",
-                speaker_role="patient",
+                speaker_role=ev.event_type,  # "doctor" or "patient"
+                emotion_analysis=emotion_analysis  # SER 결과 전달
             )
             _session_state[ev.session_id]["pending"] -= 1
 
@@ -127,7 +139,7 @@ async def _process_event(ev: QueueEvent):
         except Exception:
             pass
         # 로깅은 평가 서비스 내부 로거에 위임하거나 여기서 print
-        print(f"Queue event processing error: session={ev.session_id}, type={ev.event_type}, err={e}")
+        logger.error(f"Queue event processing error: session={ev.session_id}, type={ev.event_type}, err={e}")
 
 
 async def _maybe_finalize_session(session_id: str):
