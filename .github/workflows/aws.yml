@@ -1,0 +1,28 @@
+name: Deploy to EC2
+
+on:
+  push:
+    branches: [ main ] # main 브랜치에 푸시가 발생하면 워크플로우를 실행합니다.
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ap-northeast-2 # EC2 인스턴스가 위치한 리전을 정확하게 명시합니다.
+
+      - name: Trigger SSM Command
+        run: |
+          aws ssm send-command \
+            --targets "Key=instanceIds,Values=i-00cef412f09bd9641" \
+            --document-name "AWS-RunShellScript" \
+            --comment "Deploy FastAPI" \
+            --parameters 'commands=["/home/ubuntu/fastapi-project/deploy.sh"]' \
+            --region ap-northeast-2 
