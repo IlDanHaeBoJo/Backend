@@ -12,7 +12,15 @@ from fastapi_mail import FastMail, MessageSchema, ConnectionConfig # FastAPI-Mai
 
 from core.config import settings
 from core.models import User, UserDetails # UserDetails 모델 임포트
-from pydantic import BaseModel # Pydantic BaseModel 임포트
+from schemas.user_schemas import ( # schemas/user_schemas.py에서 스키마 임포트
+    UserCreateSchema,
+    UserLoginSchema,
+    UserDeleteSchema,
+    PasswordChangeSchema,
+    ForgotPasswordRequestSchema,
+    VerifyCodeRequestSchema,
+    UserResponseSchema
+)
 
 # In-memory refresh token storage (사용자 요청에 따라 유지)
 refresh_tokens_db: Dict[str, Dict[str, str]] = {} # {refresh_token_id: {"username": "user", "expires": "datetime"}}
@@ -34,47 +42,6 @@ if settings.MAIL_FROM and settings.MAIL_USERNAME and settings.MAIL_PASSWORD and 
         USE_CREDENTIALS=settings.USE_CREDENTIALS,
         VALIDATE_CERTS=settings.VALIDATE_CERTS
     )
-
-class UserCreateSchema(BaseModel):
-    username: str
-    password: str
-    email: str
-    name: str
-    role: str
-    student_id: Optional[str] = None
-    major: Optional[str] = None
-
-class UserLoginSchema(BaseModel):
-    username: str
-    password: str
-
-class UserDeleteSchema(BaseModel):
-    username: str
-    password: str
-
-class PasswordChangeSchema(BaseModel):
-    current_password: str
-    new_password: str
-
-class ForgotPasswordRequestSchema(BaseModel):
-    username: str
-    email: str
-
-class VerifyCodeRequestSchema(BaseModel):
-    email: str
-    code: str
-
-class UserResponseSchema(BaseModel):
-    id: int
-    username: str
-    email: str
-    name: str
-    role: str
-    student_id: Optional[str] = None
-    major: Optional[str] = None
-
-    class Config:
-        from_attributes = True # Pydantic v2에서 orm_mode 대신 사용
 
 # In-memory storage for verification codes: {email: {"code": "...", "expires": datetime}}
 verification_codes_db: Dict[str, Dict[str, str]] = {}
@@ -203,6 +170,23 @@ async def get_user_by_username(db: AsyncSession, username: str) -> Optional[User
     )
     print("result:",result)
     return result.scalar_one_or_none()
+
+async def get_user_by_id(db: AsyncSession, user_id: int) -> Optional[User]:
+    """Retrieves a user by ID from the database, eagerly loading user_detail."""
+    result = await db.execute(
+        select(User)
+        .options(selectinload(User.user_detail))
+        .where(User.id == user_id)
+    )
+    return result.scalar_one_or_none()
+
+async def get_all_users(db: AsyncSession) -> list[User]:
+    """Retrieves all users from the database, eagerly loading user_detail."""
+    result = await db.execute(
+        select(User)
+        .options(selectinload(User.user_detail))
+    )
+    return result.scalars().all()
 
 async def get_user_by_email(db: AsyncSession, email: str) -> Optional[User]:
     """Retrieves a user by email from the database, eagerly loading user_detail."""

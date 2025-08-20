@@ -22,9 +22,8 @@ class CpxService:
 
         cpx_detail = CpxDetails(
             result_id=cpx_result.result_id,
-            conversation_transcript="", # 초기값 설정
             memo="", # 초기값 설정
-            system_evaluation_data="" # 초기값 설정
+            system_evaluation_data={} # 초기값 설정
         )
         self.db.add(cpx_detail)
 
@@ -80,6 +79,32 @@ class CpxService:
         )
         return result.scalars().all()
 
+    async def get_cpx_result_by_id(self, result_id: int) -> Optional[CpxResults]:
+        """
+        result_id로 특정 CPX 실습 결과를 반환합니다. (관리자용)
+        각 결과에는 상세 정보(CpxDetails)와 평가 정보(CpxEvaluations)가 함께 로드됩니다.
+        """
+        result = await self.db.execute(
+            select(CpxResults).options(
+                joinedload(CpxResults.cpx_detail),
+                joinedload(CpxResults.cpx_evaluation)
+            ).filter(CpxResults.result_id == result_id)
+        )
+        return result.scalars().first()
+
+    async def get_cpx_results_by_student_id(self, student_id: int) -> List[CpxResults]:
+        """
+        특정 학생 ID에 해당하는 CPX 실습 결과 목록을 반환합니다. (관리자용)
+        각 결과에는 상세 정보(CpxDetails)와 평가 정보(CpxEvaluations)가 함께 로드됩니다.
+        """
+        result = await self.db.execute(
+            select(CpxResults).options(
+                joinedload(CpxResults.cpx_detail),
+                joinedload(CpxResults.cpx_evaluation)
+            ).filter(CpxResults.student_id == student_id)
+        )
+        return result.scalars().all()
+
     async def update_cpx_evaluation(self, result_id: int, evaluator_id: int, # evaluation_id 대신 result_id로 변경
                               overall_score: Optional[int] = None,
                               detailed_feedback: Optional[str] = None,
@@ -124,9 +149,8 @@ class CpxService:
         return cpx_result
 
     async def update_cpx_details(self, result_id: int, user_id: int,
-                                 conversation_transcript: Optional[str] = None,
                                  memo: Optional[str] = None,
-                                 system_evaluation_data: Optional[str] = None) -> Optional[CpxDetails]:
+                                 system_evaluation_data: Optional[dict] = None) -> Optional[CpxDetails]:
         """
         특정 CPX 실습 결과의 상세 정보(CpxDetails)를 업데이트합니다. (학생용)
         해당 결과가 주어진 user_id에 속하는지 확인합니다.
@@ -147,8 +171,6 @@ class CpxService:
         if not cpx_details:
             return None # CpxDetails를 찾을 수 없음 (논리적 오류 가능성)
 
-        if conversation_transcript is not None:
-            cpx_details.conversation_transcript = conversation_transcript
         if memo is not None:
             cpx_details.memo = memo
         if system_evaluation_data is not None:
