@@ -149,7 +149,9 @@ class EvaluationService:
             return None
 
     def _parse_structured_sections(self, document) -> dict:
-        """문서에서 구조화된 섹션 파싱 - RAG 가이드라인 JSON 형식 처리"""
+        """문서에서 구조화된 섹션 파싱"""
+        import re
+        
         structured_sections = {}
         
         # 문서를 문자열로 변환
@@ -161,7 +163,6 @@ class EvaluationService:
             document_text = str(document)
         
         # 섹션 패턴: 【섹션명】
-        import re
         section_pattern = re.compile(r'【([^】]+)】')
         # 항목 패턴: • 또는 - 로 시작하는 줄
         bullet_pattern = re.compile(r'^\s*[•\-\*]\s+(.+)$', re.MULTILINE)
@@ -176,450 +177,293 @@ class EvaluationService:
                 # 섹션 내용에서 필수 항목 추출
                 required_items = bullet_pattern.findall(section_content)
                 if required_items:
-                    # 각 섹션을 딕셔너리 형태로 저장 (required_questions 키 사용)
-                    structured_sections[section_name] = {
-                        'required_questions': required_items,
-                        'required_actions': []  # 기본값
-                    }
+                    structured_sections[section_name] = required_items
         
         return structured_sections
 
-
-
-    def evaluate_area_simple(self, conversation_text: str, area_name: str, structured_sections: dict) -> dict:
-        """단일 단계 RAG 가이드라인 비교 평가 - GPT-4o 통합 평가"""
+    def _build_full_conversation_text(self, conversation_log: list) -> str:
+        """전체 대화를 하나의 텍스트로 변환"""
         
-        # 가이드라인 텍스트 구성
-        detailed_guideline_text = ""
-        for section_name, section_data in structured_sections.items():
-            required_items = section_data.get('required_questions', []) + section_data.get('required_actions', [])
-            if required_items:
-                detailed_guideline_text += f"\n【{section_name}】\n"
-                detailed_guideline_text += "이 항목에서 확인해야 할 구체적 내용들:\n"
-                for item in required_items:
-                    detailed_guideline_text += f"  • {item}\n"
-                detailed_guideline_text += "\n"
+        chunks = []
+        current_chunk = []
+        max_chunk_size = 20  # 최대 청크 크기
         
-        # 대화 텍스트를 의사/환자별로 분리
-        doctor_text, patient_text = self._separate_conversation_by_role(conversation_text)
-        
-        print(f"[통합 평가] {area_name} 영역 평가 시작...")
-        
-        prompt = f"""{area_name} 영역 통합 평가
-
-전체 대화:
-{conversation_text}
-
-{area_name} 항목들:
-{detailed_guideline_text}
-
-**영역 맥락 파악**: 각 발언의 목적과 상황을 고려하여 {area_name} 영역에 해당하는지 판단
-- 병력 청취: 환자로부터 정보를 수집하려는 의도의 발언
-- 신체 진찰: 물리적 검사를 수행하거나 준비하는 발언  
-- 환자 교육: 의학적 정보를 환자에게 전달하거나 설명하는 발언
-
-**맥락 판단 원칙**:
-1. **발언의 주된 목적** 파악:
-   - 정보 수집 목적 → 병력 청취
-   - 검사 수행 목적 → 신체 진찰  
-   - 정보 전달 목적 → 환자 교육
-2. **발언 형태** 고려:
-   - 질문형 (물어보는 것) → 병력 청취
-   - 설명형 (알려주는 것) → 환자 교육
-   - 행동형 (검사하는 것) → 신체 진찰
-3. **{area_name} 영역 전용**: 해당 영역 목적의 발언만 포함
-4. **타 영역 제외**: 목적이 다른 영역의 발언은 절대 포함 금지
-
-평가 기준:
-1. **영역 맥락 확인**: 각 발언이 {area_name} 영역에서 나온 것인지 먼저 확인
-2. **관대한 평가**: 해당 주제가 어느 정도 다뤄졌으면 completed: true로 판단
-3. **의미 기반 매칭**: 정확한 단어가 아니어도 유사한 의미나 관련 내용이면 인정
-4. **원문 복사**: evidence는 위 대화에서 한 글자도 바꾸지 말고 정확히 복사-붙여넣기만 할 것
-5. **변경 금지**: 절대 단어 추가/삭제/변경 금지
-6. **존재 확인**: 대화에 없는 내용 절대 만들지 말 것
-7. **영역 제한**: 다른 영역(병력청취/신체진찰/환자교육)의 발언은 절대 포함하지 말 것
-
-JSON 응답:
-{{
-{', '.join([f'    "{section_name}": {{"completed": true/false, "evidence": []}}' for section_name in structured_sections.keys()])}
-}}"""
-        
-        result = self._process_evaluation_response(prompt, area_name, structured_sections, stage="통합")
-        
-        print(f"[검증] evidence 실제 존재 여부 확인...")
-        print(f"[검증] 대화 텍스트 샘플: {conversation_text[:200]}...")
-        # evidence 검증 단계 추가
-        verified_result = self._verify_evidence_exists(conversation_text, result)
-        
-        return verified_result
-    
-    def _separate_conversation_by_role(self, conversation_text: str) -> tuple:
-        """대화 텍스트를 의사 발언과 환자 발언으로 분리"""
-        
-        lines = conversation_text.strip().split('\n')
-        doctor_lines = []
-        patient_lines = []
-        
-        for line in lines:
-            line = line.strip()
-            if not line:
-                continue
+        i = 0
+        while i < len(conversation_log):
+            msg = conversation_log[i]
+            current_chunk.append(msg)
+            role = msg.get("role", "")
+            
+            # 청크 크기가 최대치에 도달했을 때
+            if len(current_chunk) >= max_chunk_size:
+                # 현재 메시지가 의사 질문이면 환자 답변까지 기다림
+                if role == "student":
+                    # 다음 환자 답변을 찾아서 포함시킴
+                    while i + 1 < len(conversation_log):
+                        i += 1
+                        next_msg = conversation_log[i]
+                        current_chunk.append(next_msg)
+                        if next_msg.get("role") == "patient":
+                            break
                 
-            if line.startswith('의사:'):
-                doctor_lines.append(line)
-            elif line.startswith('환자:'):
-                patient_lines.append(line)
-        
-        doctor_text = '\n'.join(doctor_lines)
-        patient_text = '\n'.join(patient_lines)
-        
-        print(f"대화 분리 완료 - 의사 발언: {len(doctor_lines)}개, 환자 발언: {len(patient_lines)}개")
-        
-        return doctor_text, patient_text
-    
-    def _evaluate_quality_assessment(self, state: CPXEvaluationState) -> CPXEvaluationState:
-        """2단계: 대화 품질 평가 (친절함, 공감, 전문성 등)"""
-        print(f"⭐ [{state['user_id']}] 2단계: 품질 평가 시작")
-        
-        conversation_text = self._build_conversation_text(state["conversation_log"])
-        scenario_id = state["scenario_id"]
-        
-        quality_prompt = f"""
-당신은 의학교육 평가 전문가입니다. 다음 CPX 대화의 품질을 4가지 기준으로 평가하세요.
-
-【학생-환자 대화】:
-{conversation_text}
-
-【시나리오】: {scenario_id}
-
-다음 4가지 품질 기준으로 평가하세요:
-
-【1. 의학적 정확성】:
-- 질문의 의학적 타당성과 정확성
-- 진단적 접근의 논리성
-- 의학 용어 사용의 적절성
-
-【2. 의사소통 효율성】:
-- 환자가 이해하기 쉬운 언어 사용
-- 질문의 명확성과 구체성
-- 대화 흐름의 자연스러움
-
-【3. 전문성】:
-- 의료진다운 태도와 예의
-- 환자에 대한 공감과 배려
-- 체계적이고 논리적인 접근
-
-【4. 시나리오 적합성】:
-- 주어진 시나리오에 맞는 접근
-- 환자 상황 고려
-- 효율적 진행
-
-각 항목을 1-10점으로 평가하세요.
-
-JSON 응답:
-{{
-    "medical_accuracy": 점수(1-10),
-    "communication_efficiency": 점수(1-10),
-    "professionalism": 점수(1-10),
-    "scenario_appropriateness": 점수(1-10),
-    "overall_quality_score": 전체품질점수(1-10),
-    "quality_strengths": ["우수한 점들"],
-    "quality_improvements": ["개선이 필요한 점들"]
-}}"""
-
-        try:
-            messages = [SystemMessage(content=quality_prompt)]
-            response = self.llm.invoke(messages)
-            result_text = response.content
-            
-            print(f"[품질] LLM 응답 원문:\n{result_text[:300]}...")
-            
-            # JSON 파싱
-            import re
-            json_match = re.search(r'\{.*\}', result_text, re.DOTALL)
-            if json_match:
-                json_str = json_match.group()
-                quality_result = json.loads(json_str)
-                print(f"[품질] JSON 파싱 성공")
-            else:
-                print(f"[품질] JSON 형식을 찾을 수 없습니다.")
-                quality_result = {
-                    "medical_accuracy": 6,
-                    "communication_efficiency": 6,
-                    "professionalism": 6,
-                    "scenario_appropriateness": 6,
-                    "overall_quality_score": 6,
-                    "quality_strengths": ["RAG 기반 평가 완료"],
-                    "quality_improvements": ["품질 평가 개선 필요"]
-                }
-            
-            print(f"✅ [{state['user_id']}] 2단계: 품질 평가 완료 - 평균: {quality_result.get('overall_quality_score', 6):.1f}점")
-            
-            return {
-                **state,
-                "quality_evaluation": quality_result,
-                "messages": state["messages"] + [HumanMessage(content=f"2단계: 품질 평가 완료 - {quality_result.get('overall_quality_score', 6):.1f}점")]
-            }
-            
-        except Exception as e:
-            print(f"❌ [{state['user_id']}] 품질 평가 실패: {e}")
-            return {
-                **state,
-                "quality_evaluation": {
-                    "medical_accuracy": 6,
-                    "communication_efficiency": 6,
-                    "professionalism": 6,
-                    "scenario_appropriateness": 6,
-                    "overall_quality_score": 6,
-                    "quality_strengths": ["기본 평가 완료"],
-                    "quality_improvements": ["품질 평가 오류로 기본값 사용"]
-                }
-            }
-    
-    def _generate_comprehensive_results(self, state: CPXEvaluationState) -> CPXEvaluationState:
-        """3단계: 종합 평가 및 최종 결과 생성"""
-        print(f"🎯 [{state['user_id']}] 3단계: 종합 평가 시작")
-        
-        # 1단계와 2단계 결과 수집
-        rag_completeness = state.get("completeness_assessment", {})
-        quality_assessment = state.get("quality_evaluation", {})
-        
-        # 최종 점수 계산 (가중치: 완성도 50%, 품질 50%)
-        completeness_score = rag_completeness.get("overall_completeness", 0.5) * 10  # 0-10 스케일로 변환
-        quality_score = quality_assessment.get("overall_quality_score", 6)
-        
-        # 가중치 적용: 완성도 50%, 품질 50%
-        final_score = (completeness_score * 0.5) + (quality_score * 0.5)
-        final_score = min(10, max(0, final_score))  # 0-10 범위로 제한
-        
-        # 등급 계산
-        grade = self._calculate_grade(final_score * 10)  # 100점 스케일로 변환
-        
-        # 종합 피드백 생성
-        strengths = []
-        improvements = []
-        
-        # 1단계에서 강점/개선점 수집
-        for area_name, area_data in rag_completeness.get("areas_evaluation", {}).items():
-            if isinstance(area_data, dict) and area_data.get("completion_rate", 0) > 0.7:
-                strengths.append(f"{area_data.get('area_name', area_name)} 영역 우수")
-            elif isinstance(area_data, dict) and area_data.get("completion_rate", 0) < 0.5:
-                improvements.append(f"{area_data.get('area_name', area_name)} 영역 보완 필요")
-        
-        # 2단계에서 강점/개선점 추가
-        strengths.extend(quality_assessment.get("quality_strengths", []))
-        improvements.extend(quality_assessment.get("quality_improvements", []))
-        
-        comprehensive_result = {
-            "final_score": round(final_score, 1),
-            "grade": grade,
-            "detailed_feedback": {
-                "strengths": strengths[:5],  # 최대 5개
-                "improvements": improvements[:5],  # 최대 5개
-                "overall_analysis": f"RAG 기반 평가 결과 {final_score * 10:.1f}% 완성"
-            }
-        }
-        
-        print(f"✅ [{state['user_id']}] 3단계: 종합 평가 완료 - 최종 점수: {final_score:.1f}/10 ({grade})")
-        
-        return {
-            **state,
-            "comprehensive_evaluation": comprehensive_result,
-            "final_scores": {
-                "total_score": round(final_score * 10, 1),  # 100점 스케일
-                "completion_rate": rag_completeness.get("overall_completeness", 0.5),
-                "quality_score": quality_score,
-                "grade": grade
-            },
-            "feedback": comprehensive_result["detailed_feedback"],
-            "messages": state["messages"] + [HumanMessage(content=f"3단계: 종합 평가 완료 - {final_score:.1f}점 ({grade})")]
-        }
-    
-    def _verify_evidence_exists(self, conversation_text: str, evaluation_result: dict) -> dict:
-        """2단계: evidence array의 각 항목이 실제 대화에 존재하는지 검증"""
-        
-        verified_evaluations = []
-        
-        for item in evaluation_result['guideline_evaluations']:
-            evidence_array = item['evidence']
-            
-            if not evidence_array:
-                # evidence가 비어있으면 그대로 유지
-                verified_evaluations.append(item)
-                continue
-            
-            # evidence array의 각 항목을 개별적으로 검증
-            verified_evidence = []
-            
-            for evidence_item in evidence_array:
-                evidence_item = evidence_item.strip()
-                if not evidence_item:
-                    continue
+                # 현재가 환자 답변이면, 다음이 또 환자 답변인지 확인
+                elif role == "patient":
+                    # 연속된 환자 답변들을 모두 포함
+                    while i + 1 < len(conversation_log):
+                        next_msg = conversation_log[i + 1]
+                        if next_msg.get("role") == "patient":
+                            i += 1
+                            current_chunk.append(next_msg)
+                        else:
+                            break
                 
-                # "의사:" 또는 "환자:" 접두사 제거하고 실제 content만 추출
-                content_to_check = evidence_item
-                if evidence_item.startswith('의사: '):
-                    content_to_check = evidence_item[4:]  # "의사: " 제거
-                elif evidence_item.startswith('환자: '):
-                    content_to_check = evidence_item[4:]  # "환자: " 제거
+                # 청크를 텍스트로 변환해서 저장
+                chunk_text = ""
+                for msg in current_chunk:
+                    content = msg.get("content") or msg.get("text", "")
+                    role = msg.get("role") or msg.get("speaker_role", "")
+                    
+                    if not content:
+                        raise ValueError(f"메시지에 content가 없습니다: {msg}")
+                    
+                    if not role:
+                        raise ValueError(f"메시지에 role이 없습니다: {msg}")
+                        
+                    if role == "student":
+                        speaker = "의사"
+                    elif role == "patient":
+                        speaker = "환자"
+                    else:
+                        raise ValueError(f"알 수 없는 role입니다: {role}. 허용되는 role: student, patient")
+                        
+                    chunk_text += f"{speaker}: {content}\n"
                 
-                # 실제 대화에서 해당 content가 정확히 존재하는지 확인
-                if content_to_check and content_to_check in conversation_text:
-                    verified_evidence.append(evidence_item)
-                elif content_to_check:
-                    print(f"⚠️ 존재하지 않는 발언: {content_to_check[:50]}...")
+                chunks.append(chunk_text)
+                current_chunk = []
+            
+            i += 1
+        
+        # 남은 메시지들 처리
+        if current_chunk:
+            chunk_text = ""
+            for msg in current_chunk:
+                content = msg.get("content") or msg.get("text", "")
+                role = msg.get("role") or msg.get("speaker_role", "")
+                
+                if not content:
+                    raise ValueError(f"메시지에 content가 없습니다: {msg}")
+                
+                if not role:
+                    raise ValueError(f"메시지에 role이 없습니다: {msg}")
+                    
+                if role == "student":
+                    speaker = "의사"
+                elif role == "patient":
+                    speaker = "환자"
                 else:
-                    verified_evidence.append(evidence_item)
+                    raise ValueError(f"알 수 없는 role입니다: {role}. 허용되는 role: student, patient")
+                    
+                chunk_text += f"{speaker}: {content}\n"
             
-            # 검증된 evidence가 있으면 completed 유지, 없으면 false로 변경
-            has_valid_evidence = len(verified_evidence) > 0
-            final_completed = item["completed"] and has_valid_evidence
-            
-            verified_evaluations.append({
-                "guideline_item": item["guideline_item"],
-                "completed": final_completed,
-                "evidence": verified_evidence,
-                "required_action": item.get("required_action", []) if not final_completed else []
-            })
-            
-            if not has_valid_evidence and item["completed"]:
-                print(f"❌ {item['guideline_item']}: 잘못된 evidence 제거")
+            chunks.append(chunk_text)
         
-        # 통계 재계산
-        verified_result = evaluation_result.copy()
-        verified_result['guideline_evaluations'] = verified_evaluations
-        
-        total_guidelines = len(verified_evaluations)
-        completed_guidelines = sum(1 for item in verified_evaluations if item["completed"])
-        completion_rate = completed_guidelines / total_guidelines if total_guidelines > 0 else 0
-        
-        verified_result.update({
-            "completed_guidelines": completed_guidelines,
-            "completion_rate": completion_rate
-        })
-        
-        print(f"[검증 완료] {completed_guidelines}/{total_guidelines} ({completion_rate:.1%})")
-        
-        return verified_result
-    
+        return chunks
 
-    
-    def _process_evaluation_response(self, prompt: str, area_name: str, structured_sections: dict, stage: str = "") -> dict:
-        """평가 응답 처리 공통 함수"""
+    def check_all_guidelines_in_chunk(self, chunk_text: str, structured_sections: dict, area_name: str) -> dict:
+        """청크에서 모든 가이드라인 섹션을 한번에 체크 (효율적)"""
+        
+        if not chunk_text.strip():
+            return {section_name: {"found_evidence": False} for section_name in structured_sections.keys()}
+        
+        # 모든 섹션을 하나의 프롬프트로 체크
+        sections_text = ""
+        for section_name, questions in structured_sections.items():
+            sections_text += f"\n【{section_name}】\n"
+            for q in questions:
+                sections_text += f"  • {q}\n"
+        
+        # 고도화된 평가 프롬프트
+        prompt = f"""당신은 CPX(Clinical Performance Examination) 평가 전문가입니다.
+의과대학생이 표준화 환자와 나눈 대화를 분석하여 각 가이드라인 항목이 적절히 다뤄졌는지 평가하세요.
+
+=== 평가 대상 대화 ===
+{chunk_text}
+
+=== {area_name} 평가 가이드라인 ===
+{sections_text}
+
+=== 영역별 평가 원칙 ===
+{self._get_area_specific_guidelines(area_name)}
+
+## 평가 방법
+1. **각 가이드라인 항목별로** 해당 항목의 required_questions/actions와 **의미적으로 유사한** 의사 질문이 있는지 확인
+2. **1순위**: 의사가 해당 항목의 required_questions와 비슷한 질문을 했으면 "found: true"
+3. **2순위**: 의사 질문이 전혀 없지만 환자가 관련 정보를 자발적으로 언급했으면 "found: true"
+4. **완전히 다른 주제의 질문이거나 전혀 언급되지 않았으면** "found: false"
+
+## Evidence 수집 규칙
+ **해당 항목의 required_questions/actions와 의미적으로 일치하는 질문만 evidence로 사용**
+- **1순위**: 해당 항목의 required_questions와 비슷한 의미의 "의사:" 질문 문장
+- **2순위**: 의사가 해당 항목에 대해 전혀 질문하지 않았지만 환자가 관련 정보를 언급한 "환자:" 문장
+- **주의**: 완전히 다른 주제의 의사 질문은 evidence가 될 수 없음
+- **예시**: "과거력" 항목에서 "의사: 가족 중에 치매 환자가 있으세요?" → 이건 가족력 질문이므로 과거력 evidence가 될 수 없음
+
+## 유연한 판단 기준
+- 표현이 달라도 의미가 같으면 인정
+- 직접적 질문이 아니어도 관련 정보를 얻으려는 의도가 명확하면 인정
+- 한 번의 질문으로 여러 항목을 커버할 수 있음
+
+각 항목별로 정확히 평가하여 답변:
+{{
+{', '.join([f'    "{section_name}": {{"found": true/false, "evidence": "해당 항목의 required_questions와 일치하는 의사 질문 또는 빈 문자열"}}' for section_name in structured_sections.keys()])}
+}}"""
+        
+        print("=" * 80)
+        print("📋 LLM 프롬프트:")
+        print("=" * 80)
+        print(prompt)
+        print("=" * 80)
+        
         try:
             messages = [{"role": "user", "content": prompt}]
             response = self.llm.invoke(messages)
             result_text = response.content
             
-            print(f"[{stage}] LLM 응답 원문:\n{result_text[:300]}...")
-            
-            # 개선된 JSON 추출 및 파싱
+            # JSON 추출
             import re
-            
-            # 1. 코드 블록 내 JSON 찾기 시도
-            code_block_match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', result_text, re.DOTALL)
-            if code_block_match:
-                json_str = code_block_match.group(1)
-            else:
-                # 2. 일반 JSON 패턴 찾기
-                json_match = re.search(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', result_text, re.DOTALL)
-                if json_match:
-                    json_str = json_match.group()
-                else:
-                    print(f"[{stage}] JSON 형식을 찾을 수 없습니다.")
-                    return self._create_empty_evaluation_result(area_name, structured_sections)
-            
-            # JSON 파싱 시도
-            try:
+            json_match = re.search(r'\{.*\}', result_text, re.DOTALL)
+            if json_match:
+                json_str = json_match.group()
                 result = json.loads(json_str)
-                print(f"[{stage}] JSON 파싱 성공: {len(result)}개 항목")
-            except json.JSONDecodeError as json_error:
-                print(f"[{stage}] JSON 파싱 실패: {json_error}")
-                return self._create_empty_evaluation_result(area_name, structured_sections)
-            
-            # 결과 변환 및 검증
-            guideline_evaluations = []
-            for section_name in structured_sections.keys():
-                section_result = result.get(section_name, {})
                 
-                # 데이터 타입 검증 및 보정
-                found_value = section_result.get("completed", False) or section_result.get("found", False)
-                if isinstance(found_value, str):
-                    found_value = found_value.lower() in ['true', 'yes', '1', 'found', 'completed']
-                elif not isinstance(found_value, bool):
-                    found_value = False
+                # 기존 형식으로 변환
+                converted_result = {}
+                for section_name in structured_sections.keys():
+                    section_data = result.get(section_name, {})
+                    converted_result[section_name] = {
+                        "found_evidence": section_data.get("found", False),
+                        "evidence": section_data.get("evidence", ""),
+                        "answered_questions": [section_name] if section_data.get("found", False) else []
+                    }
                 
-                evidence_value = section_result.get("evidence", [])
-                if not isinstance(evidence_value, list):
-                    # 문자열인 경우 배열로 변환
-                    if isinstance(evidence_value, str) and evidence_value:
-                        evidence_value = [evidence_value]
-                    else:
-                        evidence_value = []
-                
-                # completed가 false인 경우 required_action 추가
-                required_action = []
-                if not found_value:
-                    # RAG 결과에서 해당 항목의 required_questions나 required_actions 가져오기
-                    for area_name, area_data in structured_sections.items():
-                        if area_name == section_name:
-                            # required_questions가 있으면 추가
-                            if "required_questions" in area_data:
-                                required_action.extend(area_data["required_questions"])
-                            # required_actions가 있으면 추가  
-                            if "required_actions" in area_data:
-                                required_action.extend(area_data["required_actions"])
-                            break
-
-                guideline_evaluations.append({
-                    "guideline_item": section_name,
-                    "completed": found_value,
-                    "evidence": evidence_value,
-                    "required_action": required_action if not found_value else []
-                })
-            
-            # 통계 계산
-            total_guidelines = len(guideline_evaluations)
-            completed_guidelines = sum(1 for item in guideline_evaluations if item["completed"])
-            completion_rate = completed_guidelines / total_guidelines if total_guidelines > 0 else 0
-            
-            print(f"[{stage}] 평가 완료: {completed_guidelines}/{total_guidelines} ({completion_rate:.1%})")
-            
-            return {
-                "area_name": area_name,
-                "total_guidelines": total_guidelines,
-                "completed_guidelines": completed_guidelines,
-                "completion_rate": completion_rate,
-                "guideline_evaluations": guideline_evaluations
-            }
+                return converted_result
+            else:
+                print(f"❌ JSON 형식을 찾을 수 없습니다: {result_text[:100]}")
+                return {section_name: {"found_evidence": False} for section_name in structured_sections.keys()}
                 
         except Exception as e:
-            print(f"[{stage}] 평가 실패: {e}")
-            import traceback
-            traceback.print_exc()
-            return self._create_empty_evaluation_result(area_name, structured_sections)
-    
+            print(f"❌ 청크 분석 실패: {e}")
+            return {section_name: {"found_evidence": False} for section_name in structured_sections.keys()}
 
-    
-    def _create_empty_evaluation_result(self, area_name: str, structured_sections: dict) -> dict:
-        """빈 평가 결과 생성 (에러 처리용)"""
-        guideline_evaluations = []
-        for section_name in structured_sections.keys():
-            guideline_evaluations.append({
-                "guideline_item": section_name,
+    def _get_area_specific_guidelines(self, area_name: str) -> str:
+        """영역별 특화된 평가 원칙 반환"""
+        
+        if area_name == "병력 청취":
+            return """
+### 병력 청취 평가 원칙
+- 각 섹션의 **핵심 주제**에 대해 의사가 적절히 **질문**했는지 평가
+- **모든 개별 질문을 다 물어볼 필요 없음** - 비슷한 질문들은 하나로 커버 가능
+- **환자로부터 해당 정보를 얻었다면 완료로 인정** (질문 방식이나 표현 무관)
+- **관련된 주제를 다뤘다면 해당 섹션으로 인정** (간접적 질문도 포함)
+- 환자가 먼저 정보를 제공해도 의사가 확인했다면 완료로 인정
+
+### 섹션별 유연한 해석 기준
+- **각 섹션의 가이드라인 질문과 비슷한 내용을 다뤘는지 판단**
+- **표현이 달라도 같은 정보를 얻으려는 의도면 해당 섹션으로 인정**
+- **환자 응답을 통해 해당 섹션의 목적에 맞는 정보를 확인했다면 완료**
+- **직접적 질문이 아니어도 관련 정보를 얻었다면 인정**"""
+            
+        elif area_name == "신체 진찰":
+            return """
+### 신체 진찰 평가 원칙
+- **가이드라인에 명시된 검사명을 언급했는지 확인**
+- **"○○ 검사를 시행하겠습니다" 형태로 언급하면 완료로 인정**
+- **현재 시점에서 실시하는 검사와 미래 계획은 구분**
+- **환자교육에서 "나중에 필요한 검사" 언급은 신체진찰과 별개**
+
+### 완료 조건 (현실적)
+- 【진찰 준비】: 환자에게 진찰 시작 안내
+- 【검사 수행】: 가이드라인의 구체적 검사명 언급 (질환별로 다름)
+- **"지금 ○○검사를 하겠습니다" = 완료**, **"추후 ○○검사가 필요합니다" = 환자교육**"""
+            
+        elif area_name == "환자 교육":
+            return """
+### 환자 교육 평가 원칙
+- 의사가 환자에게 **설명, 안내, 교육**을 제공했는지 평가
+- **공감**: 환자의 걱정이나 감정에 대한 이해 표현
+- **추정 진단**: 구체적 질환명을 언급한 진단 제시
+- **검사 계획**: 구체적 검사명이나 검사 방법 언급
+- **치료 계획**: 향후 치료 방향이나 관리 방법 안내
+
+### 구체적 예시
+- 【공감】: "많이 걱정되셨을 것 같습니다" → 완료
+- 【추정 진단】: "○○질환 가능성을 고려해야 할 것 같습니다" → 완료
+- 【검사 계획】: "○○ 검사를 통해 확인하겠습니다" → 완료
+- 【치료 계획】: "○○ 치료를 시작하고 정기적으로 경과를 보겠습니다" → 완료"""
+            
+        else:
+            return """
+### 일반 평가 원칙
+- 각 섹션의 핵심 주제가 적절히 다뤄졌는지 평가
+- 표현이 달라도 의미상 동일한 내용을 확인했다면 완료로 판단"""
+
+    def evaluate_area_with_chunks(self, conversation_log: list, area_name: str, structured_sections: dict) -> dict:
+        """청크 기반으로 영역 평가 - 즉시 체크 방식"""
+        
+        # 1. 대화를 청크로 분할하고 텍스트로 변환
+        chunk_texts = self.split_and_build_chunks(conversation_log)
+        
+        # 2. 가이드라인 항목별 체크리스트 초기화
+        guideline_checklist = {}
+        for section_name, questions in structured_sections.items():
+            guideline_checklist[section_name] = {
                 "completed": False,
                 "evidence": ""
+            }
+        
+        # 3. 각 청크에서 모든 가이드라인을 한번에 체크
+        for i, chunk_text in enumerate(chunk_texts):
+            chunk_result = self.check_all_guidelines_in_chunk(chunk_text, structured_sections, area_name)
+            
+            # 결과를 각 가이드라인 체크리스트에 반영
+            for section_name, section_result in chunk_result.items():
+                if section_name in guideline_checklist and not guideline_checklist[section_name]["completed"]:
+                    checklist = guideline_checklist[section_name]
+                    
+                    if section_result.get("found_evidence"):
+                        checklist["completed"] = True
+                        if not checklist["evidence"]:  # 첫 번째 evidence만 저장
+                            evidence = section_result.get("evidence", "")
+                            if evidence:
+                                checklist["evidence"] = evidence
+        
+        # 4. 단순한 결과 생성
+        guideline_evaluations = []
+        completed_count = 0
+        
+        for section_name, checklist in guideline_checklist.items():
+            if checklist["completed"]:
+                completed_count += 1
+            
+            guideline_evaluations.append({
+                "guideline_item": section_name,
+                "completed": checklist["completed"],
+                "evidence": checklist["evidence"]
             })
+        
+        # 5. 완성도 계산
+        total_count = len(guideline_checklist)
+        completion_rate = completed_count / total_count if total_count > 0 else 0
+        
+
         
         return {
             "area_name": area_name,
-            "total_guidelines": len(guideline_evaluations),
-            "completed_guidelines": 0,
-            "completion_rate": 0.0,
-            "guideline_evaluations": guideline_evaluations
+            "completion_rate": f"{completion_rate:.1%}",
+            "guideline_evaluations": guideline_evaluations,
+            "total_guidelines": total_count,
+            "completed_guidelines": completed_count
         }
-
-
 
     async def start_evaluation_session(self, user_id: str, scenario_id: str, result_id: Optional[int] = None) -> str:
         """평가 세션 시작"""
@@ -812,8 +656,8 @@ JSON 응답:
             if api_key:
                 self.llm = ChatOpenAI(
                     openai_api_key=api_key,
-                    model_name="gpt-4o",
-                    temperature=0.1,
+                    model_name="gpt-3.5-turbo",
+                    temperature=0.3,
                     max_tokens=4000
                 )
                 
@@ -896,7 +740,7 @@ JSON 응답:
             }
 
     def _create_evaluation_workflow(self):
-        """CPX 평가 워크플로우 생성 (3단계)"""
+        """CPX 평가 워크플로우 생성 (3단계 명확화)"""
         workflow = StateGraph(CPXEvaluationState)
 
         workflow.add_node("initialize", self._initialize_evaluation)
@@ -961,9 +805,9 @@ JSON 응답:
             # 구조화된 섹션 파싱
             structured_sections = self._parse_structured_sections(documents[0])
             
-            # 간단한 RAG 가이드라인 비교 평가 실행
-            areas_evaluation[area_key] = self.evaluate_area_simple(
-                conversation_text, area_name, structured_sections
+            # 청크 기반 평가 실행
+            areas_evaluation[area_key] = self.evaluate_area_with_chunks(
+                state["conversation_log"], area_name, structured_sections
             )
         
         # 전체 완성도 점수 계산
@@ -1011,7 +855,7 @@ JSON 응답:
         return {
             **state,
             "completeness_assessment": rag_completeness_result,
-            "messages": state["messages"] + [HumanMessage(content=f"1단계: RAG 기반 완성도 평가 완료 - {overall_completeness:.1%}")]
+            "messages": state["messages"] + [HumanMessage(content="1단계: RAG 기반 완성도 평가 완료")]
         }
 
     
@@ -1021,12 +865,180 @@ JSON 응답:
         """대화 로그를 텍스트로 변환"""
         conversation_parts = []
         for msg in conversation_log:
-            speaker = "의사" if msg.get("role") == "student" else "환자"
+            speaker = "학생" if msg.get("role") == "student" else "환자"
             content = msg.get("content", "")
             conversation_parts.append(f"{speaker}: {content}")
         return "\n".join(conversation_parts)
 
+    def _evaluate_quality_assessment(self, state: CPXEvaluationState) -> CPXEvaluationState:
+        print(f"⭐ [{state['user_id']}] 2단계: 품질 평가 시작")
+        
+        conversation_text = self._build_conversation_text(state["conversation_log"])
+        scenario_id = state["scenario_id"]
+        scenario_info = self.scenario_applicable_elements.get(scenario_id, {})
+        
+        quality_assessment_prompt = f"""
+당신은 의학교육 평가 전문가입니다. 다음 CPX 대화의 품질을 4가지 기준으로 평가하세요.
 
+【학생-환자 대화】: {conversation_text}
+【시나리오 정보】: {scenario_info.get('name', scenario_id)}
+
+다음 4가지 품질 기준으로 평가하세요:
+
+【1. 의학적 정확성 (Medical Accuracy)】:
+- 질문의 의학적 타당성과 정확성
+- 진단적 접근의 논리성
+- 의학 용어 사용의 적절성
+- 임상적 판단의 합리성
+
+【2. 의사소통 효율성 (Communication Efficiency)】:
+- 환자가 이해하기 쉬운 언어 사용
+- 질문의 명확성과 구체성
+- 환자 반응에 대한 적절한 후속 질문
+- 대화 흐름의 자연스러움
+
+【3. 전문성 (Professionalism)】:
+- 의료진다운 태도와 예의
+- 환자에 대한 공감과 배려
+- 체계적이고 논리적인 접근
+- 자신감 있는 진료 태도
+
+【4. 시나리오 적합성 (Scenario Appropriateness)】:
+- 주어진 시나리오에 맞는 접근
+- 환자 연령/성별/상황 고려
+- 시간 제약 내 효율적 진행
+- 우선순위에 따른 체계적 접근
+
+각 항목을 1-10점으로 평가하고, 전체 품질 점수를 산출하세요.
+
+다음 JSON 형식으로 응답하세요:
+{{
+    "medical_accuracy": 의학적정확성점수(1-10),
+    "communication_efficiency": 의사소통효율성점수(1-10),
+    "professionalism": 전문성점수(1-10),
+    "scenario_appropriateness": 시나리오적합성점수(1-10),
+    "overall_quality_score": 전체품질점수(1-10),
+    "quality_strengths": ["품질 면에서 우수한 점들"],
+    "quality_improvements": ["품질 면에서 개선이 필요한 점들"],
+    "detailed_analysis": {{
+        "medical_accuracy_detail": "의학적 정확성에 대한 구체적 분석",
+        "communication_detail": "의사소통에 대한 구체적 분석",
+        "professionalism_detail": "전문성에 대한 구체적 분석",
+        "scenario_fit_detail": "시나리오 적합성에 대한 구체적 분석"
+    }}
+}}
+"""
+        
+        try:
+            messages = [
+                SystemMessage(content="당신은 의학교육 평가 전문가입니다."),
+                HumanMessage(content=quality_assessment_prompt)
+            ]
+            
+            response = self.llm.invoke(messages)
+            # response가 dict인 경우와 객체인 경우 모두 처리
+            if hasattr(response, 'content'):
+                result_text = response.content.strip()
+            elif isinstance(response, dict) and 'content' in response:
+                result_text = response['content'].strip()
+            else:
+                result_text = str(response).strip()
+            
+            json_match = re.search(r'\{.*\}', result_text, re.DOTALL)
+            if json_match:
+                quality_assessment = json.loads(json_match.group())
+                
+                print(f"✅ [{state['user_id']}] 2단계: 품질 평가 완료 - 종합 점수: {quality_assessment.get('overall_quality_score', 0)}")
+                
+                return {
+                    **state,
+                    "quality_evaluation": quality_assessment,
+                    "messages": state["messages"] + [HumanMessage(content="2단계: 품질 평가 완료")]
+                }
+            else:
+                raise ValueError(f"품질 평가에서 JSON 패턴을 찾을 수 없습니다. LLM 응답: {result_text}")
+        except Exception as e:
+            print(f"❌ [{state['user_id']}] 품질 평가 실패: {e}")
+            raise e
+
+    def _generate_comprehensive_results(self, state: CPXEvaluationState) -> CPXEvaluationState:
+        """3단계: 종합 평가 및 최종 결과 생성"""
+        print(f"🎯 [{state['user_id']}] 3단계: 종합 평가 시작")
+        
+        # 1단계와 2단계 결과 수집
+        rag_completeness = state.get("completeness_assessment", {})
+        quality_assessment = state.get("quality_evaluation", {})
+        
+        # 최종 점수 계산 (가중치: 완성도 60%, 품질 40%)
+        completeness_score = rag_completeness.get("overall_completeness", 0.5) * 10  # 0-10 스케일로 변환
+        quality_score = quality_assessment.get("overall_quality_score", 6)
+        
+        # 가중치 적용: 완성도 60%, 품질 40%
+        final_score = (completeness_score * 0.6) + (quality_score * 0.4)
+        final_score = min(10, max(0, final_score))  # 0-10 범위로 제한
+        
+        # 종합 피드백 생성
+        strengths = []
+        improvements = []
+        
+        # 1단계 RAG 평가에서 강점/개선점 수집
+        for area_name, area_data in rag_completeness.get("areas_evaluation", {}).items():
+            if isinstance(area_data, dict):
+                strengths.extend(area_data.get("strengths", []))
+                improvements.extend(area_data.get("improvements", []))
+        
+        # 2단계 품질 평가에서 강점/개선점 추가
+        strengths.extend(quality_assessment.get("quality_strengths", []))
+        improvements.extend(quality_assessment.get("quality_improvements", []))
+        
+        # 상세 분석 생성
+        detailed_analysis_parts = []
+        detailed_analysis_parts.append(f"【완성도 평가】 RAG 기반 평가 결과 {rag_completeness.get('overall_completeness', 0):.1%} 완성")
+        detailed_analysis_parts.append(f"【품질 평가】 4가지 품질 기준 평균 {quality_score:.1f}점")
+        
+        if rag_completeness.get("total_completed_items", 0) > 0:
+            detailed_analysis_parts.append(f"총 {rag_completeness.get('total_completed_items', 0)}개 항목 완료")
+        
+        if rag_completeness.get("total_missing_items", 0) > 0:
+            detailed_analysis_parts.append(f"{rag_completeness.get('total_missing_items', 0)}개 항목 누락")
+        
+        comprehensive_result = {
+            "final_score": round(final_score, 1),
+            "grade": self._calculate_grade(final_score * 10),  # 100점 스케일로 변환
+            "score_breakdown": {
+                "completeness_score": round(completeness_score, 1),
+            "quality_score": round(quality_score, 1),
+                "weighted_completeness": round(completeness_score * 0.6, 1),
+                "weighted_quality": round(quality_score * 0.4, 1)
+            },
+            "detailed_feedback": {
+                "strengths": list(set(strengths))[:5] if strengths else ["평가를 성실히 완료했습니다"],
+                "improvements": list(set(improvements))[:5] if improvements else ["지속적인 학습과 연습이 필요합니다"],
+                "overall_analysis": " | ".join(detailed_analysis_parts)
+            },
+            "evaluation_summary": {
+                "method": "3단계 RAG+품질 평가",
+                "steps_completed": 3,
+                "completeness_rate": rag_completeness.get("overall_completeness", 0),
+                "quality_details": quality_assessment.get("detailed_analysis", {}),
+                "total_items_evaluated": rag_completeness.get("total_completed_items", 0) + rag_completeness.get("total_missing_items", 0)
+            }
+        }
+        
+        print(f"✅ [{state['user_id']}] 3단계: 종합 평가 완료 - 최종 점수: {final_score:.1f}/10 ({comprehensive_result['grade']})")
+        
+        return {
+            **state,
+            "comprehensive_evaluation": comprehensive_result,
+            "final_scores": {
+                "total_score": round(final_score * 10, 1),  # 100점 스케일
+                "completion_rate": rag_completeness.get("overall_completeness", 0.5),
+                "quality_score": quality_score,
+                "grade": comprehensive_result["grade"]
+            },
+            "feedback": comprehensive_result["detailed_feedback"],
+            "messages": state["messages"] + [HumanMessage(content=f"3단계: 종합 평가 완료 - {final_score:.1f}점 ({comprehensive_result['grade']})")]
+        }
 
     def _calculate_grade(self, score: float) -> str:
         """점수에 따른 등급 계산"""

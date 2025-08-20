@@ -21,102 +21,69 @@ def create_documents_from_guideline(guideline_path: str) -> List[Document]:
         guideline = json.load(f)
     
     documents = []
+    category = guideline['category']
     
-    # 1. 전체 체크리스트를 하나의 문서로
-    full_content = f"""
-카테고리: {guideline['category']}
-설명: {guideline['description']}
-
-이것은 {guideline['category']} CPX 평가 가이드라인입니다.
-총 {guideline['metadata']['total_questions']}개의 질문과 행동으로 구성되어 있습니다.
-"""
-    
-    documents.append(Document(
-        page_content=full_content,
-        metadata={
-            "source": "guideline",
-            "type": "overview",
-            "category": guideline['category'],
-            "total_questions": guideline['metadata']['total_questions']
-        }
-    ))
-    
-    # 2. 각 평가 영역별로 문서 생성
+    # 각 평가 영역별로 카테고리 포함한 문서 생성
     for area_key, area_data in guideline['evaluation_areas'].items():
+        area_name = area_data['name']
+        
+        # 문서 제목에 카테고리 + 영역명 포함 (한글 name 사용)
         area_content = f"""
-평가 영역: {area_data['name']}
-카테고리: {guideline['category']}
+제목: {category} {area_name} 평가 가이드라인
+카테고리: {category}
+평가 영역: {area_name}
+
+=== {category} {area_name} 필수 항목들 ===
 
 """
         
-        # 각 하위 카테고리의 질문들을 포함
+        # 모든 하위 카테고리의 질문/행동을 한 문서에 통합
+        all_questions = []
+        all_actions = []
+        
         for subcat_key, subcat_data in area_data.get('subcategories', {}).items():
             if not subcat_data.get('applicable', True):
                 continue  # applicable이 false인 항목은 건너뛰기
                 
-            area_content += f"\n{subcat_data['name']}:\n"
+            subcat_name = subcat_data['name']
+            area_content += f"\n【{subcat_name}】\n"
             
             # 질문들 추가
             questions = subcat_data.get('required_questions', [])
-            for question in questions:
-                area_content += f"- {question}\n"
+            if questions:
+                area_content += "필수 질문:\n"
+                for question in questions:
+                    area_content += f"  • {question}\n"
+                    all_questions.append(question)
             
             # 행동들 추가
             actions = subcat_data.get('required_actions', [])
-            for action in actions:
-                area_content += f"- {action}\n"
+            if actions:
+                area_content += "필수 행동:\n"
+                for action in actions:
+                    area_content += f"  • {action}\n"
+                    all_actions.append(action)
+            
+            area_content += "\n"
         
+        # 요약 정보 추가
+        area_content += f"""
+=== 요약 ===
+총 필수 질문: {len(all_questions)}개
+총 필수 행동: {len(all_actions)}개
+"""
+    
         documents.append(Document(
             page_content=area_content,
             metadata={
-                "source": "guideline",
-                "type": "evaluation_area",
-                "category": guideline['category'],
-                "area": area_data['name'],
-                "area_key": area_key
+                "source": "cpx_textbook",
+                "type": "guideline",
+                "category": category,
+                "area": area_name,
+                "total_questions": len(all_questions),
+                "total_actions": len(all_actions)
             }
         ))
-    
-    # 3. 각 하위 카테고리별로 세부 문서 생성
-    for area_key, area_data in guideline['evaluation_areas'].items():
-        for subcat_key, subcat_data in area_data.get('subcategories', {}).items():
-            if not subcat_data.get('applicable', True):
-                continue
-                
-            subcat_content = f"""
-카테고리: {guideline['category']}
-평가 영역: {area_data['name']}
-하위 카테고리: {subcat_data['name']}
-
-"""
-            
-            questions = subcat_data.get('required_questions', [])
-            actions = subcat_data.get('required_actions', [])
-            
-            if questions:
-                subcat_content += "필수 질문들:\n"
-                for question in questions:
-                    subcat_content += f"- {question}\n"
-            
-            if actions:
-                subcat_content += "\n필수 행동들:\n"
-                for action in actions:
-                    subcat_content += f"- {action}\n"
-            
-            documents.append(Document(
-                page_content=subcat_content,
-                metadata={
-                    "source": "guideline",
-                    "type": "subcategory",
-                    "category": guideline['category'],
-                    "area": area_data['name'],
-                    "area_key": area_key,
-                    "subcategory": subcat_data['name'],
-                    "subcategory_key": subcat_key,
-                    "question_count": len(questions),
-                    "action_count": len(actions)
-                }
-            ))
     
     return documents
 
@@ -190,12 +157,12 @@ def main():
         print(f"✅ 인덱싱 완료!")
         print(f"총 문서 수: {len(vectorstore.index_to_docstore_id.values())}")
         
-        # 테스트 검색
+        # 테스트 검색 (카테고리 포함)
         print("\n🔍 테스트 검색:")
         test_queries = [
-            "기억력 저하 병력청취 질문",
-            "MMSE 검사 방법",
-            "환자 교육 내용"
+            "기억력 저하 병력 청취",
+            "기억력 저하 신체 진찰", 
+            "기억력 저하 환자 교육"
         ]
         
         for query in test_queries:
