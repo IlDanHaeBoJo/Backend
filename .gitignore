@@ -110,6 +110,7 @@ temp/
 *.bak
 *.backup 
 
+/evaluation_results
 
 # 대용량 파일 제외
 /config

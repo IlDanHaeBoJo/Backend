@@ -23,7 +23,7 @@ class SpeechEmotionDataset(Dataset):
                  labels: List[str],
                  processor: Wav2Vec2Processor,
                  is_training: bool = True,
-                 max_duration: float = 10.0):
+                 max_duration: float = 15.0):
         
         self.data_paths = data_paths
         self.labels = labels
