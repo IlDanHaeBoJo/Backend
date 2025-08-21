@@ -6,7 +6,299 @@ import os
 import random
 from tqdm import tqdm
 
-EMOTION_LABELS = ["Anxious", "Dry", "Kind"]
+EMOTION_LABELS = ["Anxious", "Dry", "Kind", "Other"]
+
+# script.txt 감정 매핑
+SCRIPT_EMOTION_MAPPING = {
+    "NEUTRAL": "Other",
+    "ANXIOUS": "Anxious", 
+    "KIND": "Kind",
+    "DRY": "Dry"
+}
+
+def parse_script_file(script_file_path: str) -> Dict[str, str]:
+    """
+    script.txt 파일을 파싱하여 파일명 -> 감정 매핑 딕셔너리 반환
+    
+    Args:
+        script_file_path: script.txt 파일 경로
+        
+    Returns:
+        Dict[파일명(확장자 제외), 감정]
+    """
+    emotion_mapping = {}
+    
+    try:
+        with open(script_file_path, 'r', encoding='utf-8') as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                
+                # F0002_000001 NEUTRAL #지문 형태에서 파일명과 감정만 추출
+                if re.match(r'^[FM]\d+_\d+\s+\w+', line):
+                    parts = line.split()
+                    if len(parts) >= 2:
+                        filename = parts[0]  # F0002_000001
+                        emotion_raw = parts[1]  # NEUTRAL, ANXIOUS, KIND, DRY 등
+                        
+                        # 매핑된 감정으로 변환, 없으면 Other로 처리
+                        emotion = SCRIPT_EMOTION_MAPPING.get(emotion_raw, "Other")
+                        emotion_mapping[filename] = emotion
+                
+    except Exception as e:
+        print(f"❌ script.txt 파싱 오류: {e}")
+        
+    return emotion_mapping
+
+def build_large_corpus_index(data_dir: str,
+                            accept_exts={'.wav', '.flac'},
+                            max_samples_per_class: Optional[int] = None) -> List[Dict[str, Any]]:
+    """
+    large 데이터셋 전용 인덱스 생성 함수
+    /data/ghdrnjs/SER/large/large/F0001,F0002,M0001,M0002... 구조
+    각 화자 폴더 안에 script.txt와 wav 파일들이 존재
+    """
+    index = []
+    emotion_counts = {emotion: 0 for emotion in EMOTION_LABELS}
+    
+    # 화자 폴더들 스캔 (F0001~F0004, M0001~M0004 등)
+    speaker_folders = sorted([d for d in os.listdir(data_dir) 
+                             if os.path.isdir(os.path.join(data_dir, d)) 
+                             and re.match(r'^[FM]\d+$', d)])
+    
+    if not speaker_folders:
+        print(f"❌ 화자 폴더를 찾을 수 없습니다: {data_dir}")
+        return []
+    
+    print(f"� 발견된 화자 폴더: {speaker_folders}")
+    
+    for speaker in tqdm(speaker_folders, desc="Large 데이터셋 인덱스 구축"):
+        speaker_dir = os.path.join(data_dir, speaker)
+        
+        # 각 화자 폴더 내의 script.txt 파싱
+        script_file_path = os.path.join(speaker_dir, "script.txt")
+        if not os.path.exists(script_file_path):
+            print(f"⚠️ script.txt를 찾을 수 없습니다: {script_file_path}")
+            continue
+        
+        print(f"📖 {speaker} script.txt 파싱 중...")
+        emotion_mapping = parse_script_file(script_file_path)
+        
+        # 해당 화자 폴더에서 wav 파일들 스캔
+        wav_files = []
+        for root, _, files in os.walk(speaker_dir):
+            for file in files:
+                if any(file.lower().endswith(ext) for ext in accept_exts):
+                    wav_files.append(os.path.join(root, file))
+        
+        for audio_path in wav_files:
+            # 파일명에서 확장자 제거 (F0002_000001.wav -> F0002_000001)
+            filename_no_ext = os.path.splitext(os.path.basename(audio_path))[0]
+            
+            # script.txt에서 감정 정보 조회
+            emotion = emotion_mapping.get(filename_no_ext, "Other")
+            
+            # 클래스별 최대 샘플 수 제한
+            if max_samples_per_class and emotion_counts[emotion] >= max_samples_per_class:
+                continue
+            
+            # 컨텐츠 ID 추출 (F0002_000001 -> 000001)
+            content_match = re.search(r'_(\d+)$', filename_no_ext)
+            content_id = int(content_match.group(1)) if content_match else 0
+            
+            index.append({
+                "path": audio_path,
+                "emotion": emotion,
+                "speaker": speaker,  # 화자 폴더명 사용
+                "content_id": content_id,
+                "source": "large"
+            })
+            
+            emotion_counts[emotion] += 1
+    
+    print(f"✅ Large 데이터셋 인덱스 완료 - 총 {len(index)}개 샘플")
+    print(f"📊 감정별 분포: {dict(emotion_counts)}")
+    print(f"👥 화자별 분포: {Counter([item['speaker'] for item in index])}")
+    
+    return index
+
+def balance_large_dataset(index: List[Dict[str, Any]], 
+                         balance_ratio: float = 0.3) -> List[Dict[str, Any]]:
+    """
+    Large 데이터셋의 클래스 불균형 해결
+    Other 클래스가 많으므로 비율 조정
+    
+    Args:
+        index: build_large_corpus_index 결과
+        balance_ratio: Other 클래스 대비 다른 클래스들의 비율 (0.3 = Other의 30% 수준)
+    """
+    emotion_groups = {emotion: [] for emotion in EMOTION_LABELS}
+    
+    # 감정별로 샘플 그룹핑
+    for item in index:
+        emotion_groups[item["emotion"]].append(item)
+    
+    print(f"🎯 클래스 균형 조정 (Other 대비 비율: {balance_ratio})")
+    
+    # Other 클래스 개수를 기준으로 다른 클래스들 개수 결정
+    other_count = len(emotion_groups["Other"])
+    target_other_count = other_count  # Other는 그대로 유지하거나 필요시 조정
+    target_non_other_count = int(other_count * balance_ratio)
+    
+    balanced_index = []
+    
+    for emotion, samples in emotion_groups.items():
+        if emotion == "Other":
+            # Other는 전체 또는 조정된 수만큼 사용
+            selected = samples[:target_other_count] if len(samples) > target_other_count else samples
+        else:
+            # 다른 감정들은 balance_ratio에 따라 조정
+            if len(samples) >= target_non_other_count:
+                selected = random.sample(samples, target_non_other_count)
+            else:
+                selected = samples  # 샘플이 부족하면 모두 사용
+        
+        balanced_index.extend(selected)
+        print(f"  {emotion}: {len(selected)}개 (원본: {len(samples)}개)")
+    
+    return balanced_index
+
+def balance_by_undersampling_majority(index: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """
+    데이터셋의 클래스 불균형을 해결합니다.
+    다수 클래스인 'Other'를 소수 클래스들의 평균 개수에 맞춰 언더샘플링합니다.
+    
+    Args:
+        index: 원본 데이터 인덱스
+    """
+    emotion_groups = {emotion: [] for emotion in EMOTION_LABELS}
+    for item in index:
+        emotion_groups[item["emotion"]].append(item)
+
+    # 'Other'를 제외한 소수 클래스들의 평균 샘플 수를 계산
+    non_other_counts = [len(samples) for emotion, samples in emotion_groups.items() if emotion != "Other"]
+    if not non_other_counts:
+        return index # 'Other' 외에 클래스가 없으면 원본 반환
+        
+    target_count = int(sum(non_other_counts) / len(non_other_counts))
+    
+    print(f"🎯 클래스 균형 조정 (언더샘플링)")
+    print(f"   'Other' 클래스를 다른 클래스 평균 개수인 {target_count}개로 조정합니다.")
+
+    balanced_index = []
+    
+    # 'Other' 클래스를 목표 개수만큼 랜덤 샘플링
+    if 'Other' in emotion_groups and len(emotion_groups['Other']) > target_count:
+        other_samples = random.sample(emotion_groups['Other'], target_count)
+        balanced_index.extend(other_samples)
+        print(f"  Other: {len(other_samples)}개 (원본: {len(emotion_groups['Other'])}개)")
+    else:
+        # 'Other'가 없거나 이미 목표치보다 적으면 그대로 사용
+        balanced_index.extend(emotion_groups.get('Other', []))
+
+    # 'Other'가 아닌 클래스들은 모두 사용
+    for emotion, samples in emotion_groups.items():
+        if emotion != "Other":
+            balanced_index.extend(samples)
+            print(f"  {emotion}: {len(samples)}개 (원본: {len(samples)}개)")
+            
+    random.shuffle(balanced_index) # 데이터 순서 섞기
+    return balanced_index
+
+def split_large_dataset(
+    index: List[Dict[str, Any]],
+    val_speaker_ratio: float = 0.2,
+    test_speaker_ratio: float = 0.2,
+    val_content_ratio: float = 0.2,
+    test_content_ratio: float = 0.2,
+    seed: int = 42
+) -> Tuple[Tuple[List[str], List[str]],
+           Tuple[List[str], List[str]],
+           Tuple[List[str], List[str]]]:
+    """
+    Large 데이터셋 전용 화자/스크립트 불교차 분할
+    
+    Args:
+        index: build_large_corpus_index() 결과
+        val_speaker_ratio: validation용 화자 비율
+        test_speaker_ratio: test용 화자 비율  
+        val_content_ratio: validation용 스크립트 비율
+        test_content_ratio: test용 스크립트 비율
+        seed: 랜덤 시드
+        
+    Returns:
+        ((train_paths, train_labels), (val_paths, val_labels), (test_paths, test_labels))
+    """
+    rng = random.Random(seed)
+    
+    # 전체 화자 및 스크립트 ID 목록
+    all_speakers = sorted(set([item["speaker"] for item in index]))
+    all_contents = sorted(set([item["content_id"] for item in index]))
+    
+    print(f"📊 전체 화자: {len(all_speakers)}명 {all_speakers}")
+    print(f"📝 전체 스크립트: {len(all_contents)}개")
+    
+    # 화자 분할
+    speakers = all_speakers[:]
+    rng.shuffle(speakers)
+    n_val_spk = max(1, int(len(speakers) * val_speaker_ratio))
+    n_test_spk = max(1, int(len(speakers) * test_speaker_ratio))
+    
+    val_speakers = set(speakers[:n_val_spk])
+    test_speakers = set(speakers[n_val_spk:n_val_spk+n_test_spk])
+    train_speakers = set(speakers[n_val_spk+n_test_spk:])
+    
+    # 스크립트 ID 분할
+    contents = all_contents[:]
+    rng.shuffle(contents)
+    n_val_content = max(1, int(len(contents) * val_content_ratio))
+    n_test_content = max(1, int(len(contents) * test_content_ratio))
+    
+    val_contents = set(contents[:n_val_content])
+    test_contents = set(contents[n_val_content:n_val_content+n_test_content])
+    train_contents = set(contents[n_val_content+n_test_content:])
+    
+    # 화자와 스크립트 모두 불교차인 샘플만 선택
+    train_items = [item for item in index 
+                   if item["speaker"] in train_speakers and item["content_id"] in train_contents]
+    val_items = [item for item in index 
+                 if item["speaker"] in val_speakers and item["content_id"] in val_contents]
+    test_items = [item for item in index 
+                  if item["speaker"] in test_speakers and item["content_id"] in test_contents]
+    
+    # 결과 출력
+    def summarize_large(name, items, speakers_set, contents_set):
+        spks = sorted(set([item["speaker"] for item in items]))
+        cids = sorted(set([item["content_id"] for item in items]))
+        emo_cnt = Counter([item["emotion"] for item in items])
+        print(f"\n[{name}]")
+        print(f"  샘플: {len(items)}개")
+        print(f"  화자: {len(spks)}명 - {spks}")
+        print(f"  스크립트: {len(cids)}개 (예시: {cids[:10]})")
+        print(f"  감정분포: {dict(emo_cnt)}")
+    
+    summarize_large("TRAIN", train_items, train_speakers, train_contents)
+    summarize_large("VAL", val_items, val_speakers, val_contents)
+    summarize_large("TEST", test_items, test_speakers, test_contents)
+    
+    # 불교차 검증
+    assert set([item["speaker"] for item in train_items]).isdisjoint(
+        set([item["speaker"] for item in val_items + test_items])), "Train 화자가 Val/Test와 겹칩니다."
+    assert set([item["speaker"] for item in val_items]).isdisjoint(
+        set([item["speaker"] for item in test_items])), "Val 화자가 Test와 겹칩니다."
+    assert set([item["content_id"] for item in train_items]).isdisjoint(
+        set([item["content_id"] for item in val_items + test_items])), "Train 스크립트가 Val/Test와 겹칩니다."
+    assert set([item["content_id"] for item in val_items]).isdisjoint(
+        set([item["content_id"] for item in test_items])), "Val 스크립트가 Test와 겹칩니다."
+    
+    print("✅ 화자 및 스크립트 불교차 검증 완료!")
+    
+    # 최종 리스트 변환
+    def to_xy(items):
+        return [item["path"] for item in items], [item["emotion"] for item in items]
+    
+    return to_xy(train_items), to_xy(val_items), to_xy(test_items)
 
 def simple_augmentation(audio: np.ndarray, sample_rate: int) -> np.ndarray:
     """간단한 오디오 증강 (NumPy 2.x 호환)"""
@@ -56,17 +348,21 @@ def get_emotion_from_filename(filename: str) -> Optional[str]:
     elif 141 <= file_num <= 150:
         return "Dry"
     else:
-        return None
+        return "Other"
 
 
 # 데이터 전체를 스캔해서 (경로, 감정, 화자, 스크립트ID) 인덱스 생성
 def build_corpus_index(data_dir: str,
                        accept_exts={'.wav', '.flac'},
-                       require_emotion=True) -> List[Dict[str, Any]]:
+                       require_emotion=True,
+                       max_samples_per_class=None) -> List[Dict[str, Any]]:
     """
     return: [{"path": p, "emotion": e, "speaker": s, "content_id": c}, ...]
+    max_samples_per_class: 클래스당 최대 샘플 수 (None이면 제한 없음)
     """
     index = []
+    emotion_counts = {emotion: 0 for emotion in EMOTION_LABELS}  # 클래스별 카운트
+    
     speakers = sorted([d for d in os.listdir(data_dir)
                        if os.path.isdir(os.path.join(data_dir, d))])
     print(f"📁 화자 폴더 수: {len(speakers)}")
@@ -84,7 +380,11 @@ def build_corpus_index(data_dir: str,
                 # 감정 라벨
                 emo = infer_emotion_from_path(path)
                 if require_emotion and emo not in EMOTION_LABELS:
-                    # 감정 미매칭 샘플은 제외
+                    # Other 감정도 포함하도록 수정
+                    emo = "Other"
+                
+                # 클래스별 최대 샘플 수 제한
+                if max_samples_per_class and emotion_counts[emo] >= max_samples_per_class:
                     continue
 
                 # 스크립트(대화) ID: 파일명에서 추출 (기존 규칙 그대로)
@@ -99,7 +399,10 @@ def build_corpus_index(data_dir: str,
                     "speaker": spk,
                     "content_id": cid
                 })
+                emotion_counts[emo] += 1
+    
     print(f"✅ 인덱스 샘플 수: {len(index)}")
+    print(f"📊 클래스별 분포: {dict(emotion_counts)}")
     return index
 
 

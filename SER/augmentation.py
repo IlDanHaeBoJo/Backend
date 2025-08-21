@@ -1,5 +1,5 @@
 from audiomentations import Compose, PitchShift, TimeStretch, AddGaussianNoise, Shift, Gain
-from .config import config
+from config import config
 
 def get_augmentation_pipeline(scale: float = 1.0):
     """데이터 증강 파이프라인 생성

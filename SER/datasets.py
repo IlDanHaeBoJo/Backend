@@ -1,5 +1,4 @@
 from torch.utils.data import Dataset
-from config import Config
 from typing import List, Dict
 from data_utils import *
 from audiomentations import Compose, PitchShift, TimeStretch, AddGaussianNoise, Shift, Gain, RoomSimulator, HighPassFilter, LowPassFilter
@@ -7,6 +6,7 @@ import json
 import sys
 import torch
 import librosa
+from pathlib import Path
 
 from transformers import (
     Wav2Vec2ForSequenceClassification,
@@ -14,21 +14,14 @@ from transformers import (
     Wav2Vec2Config
 )
 
-from config import Config
+from config import config
 
-config = Config
+# Use the shared config's vocabulary data
+CHAR2ID = config.char2id
+CHAR_VOCAB = config.char_vocab  
+ID2CHAR = config.id2char
 
-# Character Vocabulary 로드
-try:
-    with open('char_to_id.json', 'r', encoding='utf-8') as f:
-        CHAR2ID = json.load(f)
-    CHAR_VOCAB = list(CHAR2ID.keys())
-    ID2CHAR = {i: char for char, i in CHAR2ID.items()}
-    print(f"✅ Character Vocabulary 로드 완료 ({len(CHAR_VOCAB)}개)")
-except FileNotFoundError:
-    print("❌ 'char_to_id.json'을 찾을 수 없습니다. 먼저 build_vocab.py를 실행하세요.")
-    sys.exit(1)
-
+SER_ROOT = Path(__file__).parent
 
 # Audio Augmentation -> audiomentaions 오류 지속 발생 .. ?
 AUGMENTATION = Compose([
@@ -48,8 +41,8 @@ AUGMENTATION = Compose([
          max_gain_in_db= 2.0, 
          p=0.35 * 0.7),
 
-    Shift(min_fraction=-0.03,
-          max_fraction= 0.03, p=0.35 * 0.7),
+    Shift(min_shift=-0.03,
+          max_shift= 0.03, p=0.35 * 0.7),
 
     # 가벼운 프로소디(선택)
     PitchShift(min_semitones=-1, max_semitones=1, p=0.20 * 0.7),
@@ -63,37 +56,41 @@ def preprocess_audio(file_path: str, processor: Wav2Vec2Processor, is_training: 
     """오디오 전처리"""
     try:
         # 오디오 로드
-        audio, sr = librosa.load(file_path, sr=config.SAMPLE_RATE)
+        audio, sr = librosa.load(file_path, sr=config.model.sample_rate)
 
         if is_training:
             audio = AUGMENTATION(samples=audio, sample_rate=sr)
        
         # 길이 조정
-        target_length = int(config.SAMPLE_RATE * config.MAX_DURATION)
+        target_length = int(config.model.sample_rate * config.model.max_duration)
         if len(audio) > target_length:
             start_idx = np.random.randint(0, len(audio) - target_length + 1)
             audio = audio[start_idx:start_idx + target_length]
         elif len(audio) < target_length:
             pad_length = target_length - len(audio)
             audio = np.pad(audio, (0, pad_length), mode='constant')
-        
-        inputs = processor(audio, sampling_rate=config.SAMPLE_RATE, return_tensors="pt", padding=True)
+
+        inputs = processor(audio, sampling_rate=config.model.sample_rate, return_tensors="pt", padding=True)
         return inputs.input_values.squeeze(0)
     except Exception as e:
         print(f"오디오 전처리 오류: {file_path}, {e}")
         return None
 
 class EmotionDataset(Dataset):
-    def __init__(self, audio_paths: List[str], labels: List[str], processor: Wav2Vec2Processor, is_training: bool = True, config=Config):
-        self.data_dir = "/data/ghdrnjs/SER/small/"
+    def __init__(self, audio_paths: List[str], labels: List[str], processor: Wav2Vec2Processor, is_training: bool = True, config=None):
+        if config is None:
+            from config import config as global_config
+            config = global_config
+            
+        self.data_dir = "/data/ghdrnjs/SER/large/large"
         self.audio_paths = audio_paths
         self.labels = labels
         self.processor = processor
         self.config = config
-        self.encoded_labels = [self.config.LABEL2ID[label] for label in labels]
+        self.encoded_labels = [self.config.model.label2id[label] for label in labels]
         self.is_training = is_training
 
-        with open("script.json", "r", encoding="utf-8") as f:
+        with open(SER_ROOT / "script.json", "r", encoding="utf-8") as f:
             self.text_json = json.load(f)
 
         self.spk2id = build_speaker_mapping(audio_paths, self.data_dir)        
@@ -111,7 +108,7 @@ class EmotionDataset(Dataset):
         
         input_values = preprocess_audio(audio_path, self.processor, self.is_training)
         if input_values is None:
-            input_values = torch.zeros(int(config.SAMPLE_RATE * config.MAX_DURATION))
+            input_values = torch.zeros(int(config.model.sample_rate * config.model.max_duration))
         
         spk_idx_tensor = None
         if self.spk2id is not None:

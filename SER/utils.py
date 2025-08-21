@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Dict, List, Any, Optional, Tuple
 from datetime import datetime
 
-from .config import config
+from config import config
 
 def setup_logging(log_level: str = "INFO", log_file: Optional[str] = None):
     """로깅 설정"""

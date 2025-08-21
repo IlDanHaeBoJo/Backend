@@ -6,12 +6,16 @@ from dataclasses import dataclass, field
 
 # SER 폴더의 루트 경로
 SER_ROOT = Path(__file__).parent
+print(f"SER_ROOT: {SER_ROOT}")
 PROJECT_ROOT = SER_ROOT.parent
+DATA_ROOT = Path("/data/ghdrnjs/SER")
 
 @dataclass
 class ModelConfig:
     model_name: str = "kresnik/wav2vec2-large-xlsr-korean"
-    emotion_labels: List[str] = field(default_factory=lambda: ["Anxious", "Dry", "Kind"])
+    w2v2_model_name: str = "kresnik/wav2vec2-large-xlsr-korean"
+    prosody_model_name: str = "speechbrain/spkrec-ecapa-voxceleb"
+    emotion_labels: List[str] = field(default_factory=lambda: ["Anxious", "Dry", "Kind", "Other"])
     sample_rate: int = 16000
     max_duration: float = 10.0
     num_labels: int = field(init=False)
@@ -25,9 +29,9 @@ class ModelConfig:
 
 @dataclass
 class TrainingConfig:
-    batch_size: int = 4
+    batch_size: int = 8
     learning_rate: float = 3e-5
-    num_epochs: int = 10
+    num_epochs: int = 20
     warmup_steps: int = 1000
     gradient_accumulation_steps: int = 4
     fp16: bool = True
@@ -51,12 +55,16 @@ class DataConfig:
     supported_formats: List[str] = field(default_factory=lambda: ['.wav', '.mp3', '.m4a', '.flac', '.ogg'])
     min_audio_length: float = 0.5  # seconds
     max_audio_length: float = 10.0  # seconds
+    # Large 데이터셋 설정 추가
+    use_large_dataset: bool = True
+    large_balance_ratio: float = 0.8 
 
 @dataclass
 class PathConfig:
     ser_root: Path = SER_ROOT
     project_root: Path = PROJECT_ROOT
-    data_dir: Path = field(default_factory=lambda: SER_ROOT / "data")
+    data_dir: Path = field(default_factory=lambda: DATA_ROOT / "small")
+    large_data_dir: Path = field(default_factory=lambda: DATA_ROOT / "large" / "large")  # Large 데이터셋 경로 추가
     output_dir: Path = field(default_factory=lambda: SER_ROOT / "results")
     cache_dir: Path = field(default_factory=lambda: SER_ROOT / "cache")
     log_dir: Path = field(default_factory=lambda: SER_ROOT / "logs")
@@ -65,7 +73,7 @@ class PathConfig:
     
     def __post_init__(self):
         # 필요한 디렉터리 생성
-        for path in [self.data_dir, self.output_dir, self.cache_dir, self.log_dir, self.checkpoint_dir]:
+        for path in [self.data_dir, self.large_data_dir, self.output_dir, self.cache_dir, self.log_dir, self.checkpoint_dir]:
             path.mkdir(parents=True, exist_ok=True)
 
 @dataclass
