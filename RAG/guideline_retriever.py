@@ -6,18 +6,19 @@ import os
 import sys
 from pathlib import Path
 from typing import Dict, List, Optional
-import torch
 from langchain_community.vectorstores import FAISS
-from langchain_community.embeddings import HuggingFaceEmbeddings
+from langchain_openai import OpenAIEmbeddings
 from langchain_core.documents import Document
 
 # 상위 디렉토리의 모듈을 import하기 위한 경로 추가
 sys.path.append(str(Path(__file__).parent.parent))
 
+
+
 class GuidelineRetriever:
     """CPX 가이드라인 검색 및 평가 도구"""
     
-    def __init__(self, index_path: str = "faiss_guideline_index", model_name: str = "intfloat/multilingual-e5-large"):
+    def __init__(self, index_path: str = "faiss_guideline_index", model_name: str = "text-embedding-3-small"):
         """
         가이드라인 검색기 초기화
         
@@ -35,11 +36,16 @@ class GuidelineRetriever:
     def _initialize_vectorstore(self):
         """벡터스토어 초기화"""
         try:
-            device = "cuda" if torch.cuda.is_available() else "cpu"
-            print(f"🔧 가이드라인 검색기 초기화 (장치: {device})")
+            # OpenAI API 키 확인
+            api_key = os.getenv("OPENAI_API_KEY")
+            if not api_key:
+                raise ValueError("OPENAI_API_KEY가 설정되지 않았습니다. .env 파일을 확인하세요.")
             
-            # 임베딩 모델 초기화
-            self.embeddings = HuggingFaceEmbeddings(model_name=self.model_name)
+            # 임베딩 모델 초기화 - OpenAI API 사용
+            self.embeddings = OpenAIEmbeddings(
+                model=self.model_name,
+                openai_api_key=api_key
+            )
             
             # FAISS 인덱스 로드
             if os.path.exists(self.index_path):

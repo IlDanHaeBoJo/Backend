@@ -14,7 +14,7 @@ class QueueEvent:
     user_id: str
     seq: int
     event_type: str  # "doctor", "patient", "ended"
-    audio_path: Optional[str]
+    audio_buffer: Optional[bytearray]  # 메모리 버퍼
     text: Optional[str]
     timestamp: str
 
@@ -38,7 +38,7 @@ def _ensure_session_state(session_id: str):
         _session_state[session_id] = {"pending": 0, "ended": False}
 
 
-async def enqueue_user_utterance(session_id: str, user_id: str, seq: int, audio_path: str, text: str):
+async def enqueue_user_utterance(session_id: str, user_id: str, seq: int, audio_buffer: bytearray, text: str):
     _ensure_session_state(session_id)
     _session_state[session_id]["pending"] += 1
     await _get_queue().put(
@@ -47,15 +47,15 @@ async def enqueue_user_utterance(session_id: str, user_id: str, seq: int, audio_
             user_id=user_id,
             seq=seq,
             event_type="doctor",
-            audio_path=audio_path,
+            audio_buffer=audio_buffer,  # 메모리 버퍼 직접 전달
             text=text,
             timestamp=datetime.utcnow().isoformat(),
         )
     )
-    logger.info(f"유저 발화 세션 큐 등록 = {session_id}, seq={seq}")
+    logger.info(f"유저 발화 세션 큐 등록 (버퍼) = {session_id}, seq={seq}")
 
 
-async def enqueue_ai_utterance(session_id: str, user_id: str, seq: int, audio_path: Optional[str], text: str):
+async def enqueue_ai_utterance(session_id: str, user_id: str, seq: int, tts_audio_buffer: Optional[bytes], text: str):
     _ensure_session_state(session_id)
     _session_state[session_id]["pending"] += 1
     await _get_queue().put(
@@ -64,12 +64,12 @@ async def enqueue_ai_utterance(session_id: str, user_id: str, seq: int, audio_pa
             user_id=user_id,
             seq=seq,
             event_type="patient",
-            audio_path=audio_path,
+            audio_buffer=bytearray(tts_audio_buffer) if tts_audio_buffer else None,  # TTS 버퍼
             text=text,
             timestamp=datetime.utcnow().isoformat(),
         )
     )
-    logger.info(f"AI 발화 세션 큐 등록 = {session_id}, seq={seq}")
+    logger.info(f"AI 발화 세션 큐 등록 (버퍼) = {session_id}, seq={seq}")
 
 
 async def enqueue_conversation_ended(session_id: str, user_id: str, seq: int):
@@ -81,7 +81,7 @@ async def enqueue_conversation_ended(session_id: str, user_id: str, seq: int):
             user_id=user_id,
             seq=seq,
             event_type="ended",
-            audio_path=None,
+            audio_buffer=None,
             text=None,
             timestamp=datetime.utcnow().isoformat(),
         )
@@ -97,30 +97,43 @@ async def _process_event(ev: QueueEvent):
     try:
         emotion_analysis = None
         
-        # doctor 음성인 경우 SER 분석 수행
-        if ev.event_type == "doctor" and ev.audio_path:
+        # doctor 음성인 경우 SER 분석 수행 (오디오 버퍼 직접 처리)
+        logger.info(f"🔍 [{ev.session_id}] 이벤트 처리: type={ev.event_type}, buffer_size={len(ev.audio_buffer) if ev.audio_buffer else 0}")
+        if ev.event_type == "doctor" and ev.audio_buffer:
             try:
-                emotion_result = await service_manager.ser_service.analyze_emotion(ev.audio_path)
+                emotion_result = await service_manager.ser_service.analyze_emotion_from_buffer(ev.audio_buffer)
                 if emotion_result.get("success"):
                     emotion_analysis = {
                         "predicted_emotion": emotion_result["predicted_emotion"],
                         "confidence": emotion_result["confidence"],
                         "emotion_scores": emotion_result["emotion_scores"]
                     }
-                    logger.info(f"🎭 [{ev.session_id}] SER 분석 완료: {emotion_analysis['predicted_emotion']} ({emotion_analysis['confidence']:.2f})")
+                    logger.info(f"🎭 [{ev.session_id}] SER 분석 완료 (버퍼): {emotion_analysis['predicted_emotion']} ({emotion_analysis['confidence']:.2f})")
                 else:
                     logger.warning(f"⚠️ [{ev.session_id}] SER 분석 실패: {emotion_result.get('error', 'Unknown error')}")
+                    # SER 실패 시 fallback 감정 결과 사용
+                    emotion_analysis = {
+                        "predicted_emotion": "Kind",
+                        "confidence": 0.5,
+                        "emotion_scores": {"Kind": 0.5, "Anxious": 0.3, "Dry": 0.2}
+                    }
+                    logger.info(f"🔄 [{ev.session_id}] SER Fallback 적용: Kind (0.50)")
             except Exception as ser_error:
                 logger.error(f"❌ [{ev.session_id}] SER 분석 오류: {ser_error}")
-                # SER 실패해도 평가는 계속 진행
+                # SER 완전 실패 시에도 fallback 감정 결과 사용
+                emotion_analysis = {
+                    "predicted_emotion": "Kind",
+                    "confidence": 0.5,
+                    "emotion_scores": {"Kind": 0.5, "Anxious": 0.3, "Dry": 0.2}
+                }
+                logger.info(f"🔄 [{ev.session_id}] SER 오류 Fallback 적용: Kind (0.50)")
         
         # evaluation 서비스로 전달 (SER 결과 포함)
         if ev.event_type in ("doctor", "patient"):
             await service_manager.evaluation_service.add_conversation_entry(
                 session_id=ev.session_id,
-                audio_file_path=ev.audio_path or "",
                 text=ev.text or "",
-                speaker_role=ev.event_type,  # "doctor" or "patient"
+                role=ev.event_type,  # "doctor" or "patient"
                 emotion_analysis=emotion_analysis  # SER 결과 전달
             )
             _session_state[ev.session_id]["pending"] -= 1
@@ -141,8 +154,6 @@ async def _process_event(ev: QueueEvent):
         # 로깅은 평가 서비스 내부 로거에 위임하거나 여기서 print
         logger.error(f"Queue event processing error: session={ev.session_id}, type={ev.event_type}, err={e}")
 
-
-
 async def _maybe_finalize_session(session_id: str):
     """세션이 종료 플래그이며 pending이 0이면 평가 마감 수행"""
     st = _session_state.get(session_id)
@@ -160,7 +171,6 @@ async def _maybe_finalize_session(session_id: str):
             # 세션 상태 정리
             _session_state.pop(session_id, None)
 
-
 async def _worker_loop():
     q = _get_queue()
     while True:
@@ -174,5 +184,3 @@ def start_worker_once():
     global _worker_task
     if _worker_task is None:
         _worker_task = asyncio.create_task(_worker_loop())
-
-

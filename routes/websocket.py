@@ -1,15 +1,16 @@
 import asyncio
 import json
 import logging
-import os
-from pathlib import Path
+
+
 from typing import Dict, Any
-import wave
+
 import numpy as np
 from datetime import datetime
+import base64
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
-from google.cloud import speech
+
 
 from core.startup import service_manager
 from core.config import settings
@@ -20,7 +21,7 @@ from infra.inmemory_queue import (
     start_worker_once,
 )
 from services.cpx_service import CpxService
-from core.database import get_db
+from core.config import get_db
         
 logger = logging.getLogger(__name__)
 
@@ -48,7 +49,6 @@ class AudioProcessor:
                 "is_processing": False,  # STT 처리 중 플래그
                 "should_cancel": False,  # 처리 취소 플래그
                 "conversation_ended": False,  # 대화 종료 플래그
-                # "conversation_log": [],  # 대화 로그 저장
                 "scenario_id": None,  # 선택된 시나리오
                 "session_start_time": None,  # 세션 시작 시간
             }
@@ -85,21 +85,37 @@ class AudioProcessor:
             logger.error(f"VAD 처리 오류: {e}")
             return False
     
-    async def save_audio_buffer_as_wav(self, audio_buffer: bytearray, file_path: str):
-        """오디오 버퍼를 WAV 파일로 저장"""
+    def _convert_buffer_to_numpy(self, audio_buffer: bytearray) -> np.ndarray:
+        """오디오 버퍼를 numpy 배열로 변환"""
         try:
-            with wave.open(file_path, 'wb') as wav_file:
-                wav_file.setnchannels(settings.AUDIO_CHANNELS)
-                wav_file.setsampwidth(settings.AUDIO_SAMPLE_WIDTH)
-                wav_file.setframerate(settings.AUDIO_SAMPLE_RATE)
-                wav_file.writeframes(bytes(audio_buffer))
-                
+            # 16-bit PCM으로 변환
+            audio_data = np.frombuffer(audio_buffer, dtype=np.int16)
+            
+            # float32로 정규화 (-1.0 ~ 1.0)
+            audio_float = audio_data.astype(np.float32) / 32768.0
+            
+            return audio_float
+            
         except Exception as e:
-            logger.error(f"WAV 파일 저장 오류: {e}")
-            raise
+            logger.error(f"오디오 버퍼 변환 오류: {e}")
+            return np.array([])
+    
+    async def _perform_stt_from_buffer(self, audio_numpy: np.ndarray) -> str:
+        """numpy 배열에서 직접 STT 처리 (Google Cloud Speech)"""
+        try:
+            if len(audio_numpy) == 0:
+                return ""
+            
+            # STT 서비스로 처리
+            result = await service_manager.stt_service.transcribe_from_buffer(audio_numpy)
+            return result
+            
+        except Exception as e:
+            logger.error(f"STT 처리 오류: {e}")
+            return ""
     
     async def process_complete_utterance(self, websocket: WebSocket, user_id: str, audio_buffer: bytearray, session: dict):
-        """완전한 발화 처리 (취소 가능)"""
+        """완전한 발화 처리 (메모리 버퍼 직접 사용)"""
         if len(audio_buffer) == 0:
             return
         
@@ -123,38 +139,26 @@ class AudioProcessor:
                 logger.info(f"[{user_id}] ⏹️  처리 취소됨 (새 발화 감지)")
                 return
             
-            # 임시 WAV 파일 생성
-            timestamp = int(asyncio.get_event_loop().time()) # ??
-
-            # 사용자별 하위 디렉터리 생성 (세션별)
-            user_audio_dir = settings.TEMP_AUDIO_DIR / str(user_id) / settings.RUN_ID # "temp_audio/user_id/run_id(250807_151053)"
-            user_audio_dir.mkdir(parents=True, exist_ok=True)
-            temp_path = user_audio_dir / f"stream_{timestamp}.wav"
-            
-            # 오디오 저장
-            await self.save_audio_buffer_as_wav(audio_buffer, str(temp_path))
+            # 오디오 버퍼를 numpy 배열로 변환 (파일 저장 없이)
+            audio_numpy = self._convert_buffer_to_numpy(audio_buffer)
             
             # 취소 확인
             if session["should_cancel"]:
                 logger.info(f"[{user_id}] ⏹️  처리 취소됨 (새 발화 감지)")
-                if temp_path.exists():
-                    temp_path.unlink()
                 return
             
-            # STT 처리
-            user_text = await self._perform_stt(temp_path)
+            # STT 처리 (메모리 버퍼 직접 사용)
+            user_text = await self._perform_stt_from_buffer(audio_numpy)
             
             # 취소 확인
             if session["should_cancel"]:
                 logger.info(f"[{user_id}] ⏹️  처리 취소됨 (새 발화 감지)")
-                if temp_path.exists():
-                    temp_path.unlink()
                 return
             
             if user_text:
                 logger.info(f"[{user_id}] STT 결과: {user_text}")
                 
-                # 사용자 발화 큐 적재 (비동기, 백오프 재시도)
+                # 사용자 발화 큐 적재 (오디오 버퍼 직접 전달)
                 if user_id in self.user_evaluation_sessions:
                     session_id = self.user_evaluation_sessions[user_id]
                     session.setdefault("seq", 0)
@@ -165,19 +169,17 @@ class AudioProcessor:
                             session_id,
                             user_id,
                             session["seq"],
-                            str(temp_path),
+                            audio_buffer,  # 오디오 버퍼 직접 전달
                             user_text,
                         )
                     )
                 
-                # AI 응답 생성 (음성 파일 경로 포함)
-                response_data = await self._generate_ai_response(user_id, user_text, str(temp_path))
+                # AI 응답 생성 (오디오 버퍼 직접 전달)
+                response_data = await self._generate_ai_response(user_id, user_text, audio_buffer)
                 
             # 취소 확인 (마지막 체크)
                 if session["should_cancel"]:
                     logger.info(f"[{user_id}] ⏹️  처리 취소됨 (새 발화 감지)")
-                    if temp_path.exists():
-                        temp_path.unlink()
                     return
                 
                 # 대화 종료 확인 및 세션에 플래그 설정
@@ -201,7 +203,7 @@ class AudioProcessor:
                                 session_id,
                                 user_id,
                                 session["seq"],
-                                response_data.get("audio_url"),
+                                response_data.get("tts_audio_buffer"),  # TTS 버퍼 직접 전달
                                 response_data.get("ai_text", ""),
                             )
                         )
@@ -229,11 +231,6 @@ class AudioProcessor:
                         "message": "음성을 인식하지 못했습니다. 다시 말씀해 주세요.",
                         "avatar_action": "listening"
                     }, ensure_ascii=False))
-            
-            # 임시 파일 정리 - 평가 서비스에서 관리하므로 여기서는 삭제하지 않음
-            # 평가 완료 시 _cleanup_audio_files()에서 일괄 삭제
-            # if temp_path.exists():
-            #     temp_path.unlink()
                 
         except Exception as e:
             logger.error(f"발화 처리 오류: {e}")
@@ -243,32 +240,6 @@ class AudioProcessor:
                     "message": "음성 처리 중 오류가 발생했습니다.",
                     "avatar_action": "error"
                 }, ensure_ascii=False))
-    
-    async def _perform_stt(self, audio_file_path: Path) -> str:
-        """STT 수행"""
-        try:
-            with open(audio_file_path, "rb") as audio_file:
-                audio_content = audio_file.read()
-            
-            audio = speech.RecognitionAudio(content=audio_content)
-            response = service_manager.speech_client.recognize(
-                config=service_manager.speech_config, 
-                audio=audio
-            )
-            
-            # 인식 결과 수집
-            user_text = ""
-            for result in response.results:
-                user_text += result.alternatives[0].transcript
-            
-            # 한국어 의료 용어 후처리
-            user_text = self._correct_medical_terms(user_text.strip())
-            
-            return user_text
-            
-        except Exception as e:
-            logger.error(f"STT 처리 오류: {e}")
-            return ""
     
     def _correct_medical_terms(self, text: str) -> str:
         """한국어 의료 용어 오인식 교정"""
@@ -289,8 +260,8 @@ class AudioProcessor:
         
         return text
     
-    async def _generate_ai_response(self, user_id: str, user_text: str, audio_file_path: str = None) -> Dict[str, Any]:
-        """AI 응답 생성 (시나리오 기반)"""
+    async def _generate_ai_response(self, user_id: str, user_text: str, audio_buffer: bytearray = None) -> Dict[str, Any]:
+        """AI 응답 생성 (메모리 버퍼 기반)"""
         try:
             # 세션 정보 가져오기
             session = self.get_user_session(user_id)
@@ -306,19 +277,22 @@ class AudioProcessor:
             # 출력 로깅
             print(f"🤖 AI 응답: '{response_text}'")
             
-            # TTS 생성
-            audio_path = await service_manager.tts_service.generate_speech(response_text)
-            logger.info(f"🔊 TTS 파일 생성됨: {audio_path}")
+            # TTS 생성 (메모리 버퍼로 반환)
+            tts_audio_buffer = await service_manager.tts_service.generate_speech(response_text)
+            logger.info(f"🔊 TTS 오디오 생성 완료 (메모리 버퍼)")
             
-            # 응답 데이터 구성 (프론트 전송용 audio_url, 서버 내부용 audio_path 모두 유지)
-            audio_url = Path(audio_path).name if audio_path else None
-            logger.info(f"🔗 WebSocket 전송할 audio_url: {audio_url}")
+            # TTS 오디오 버퍼를 Base64로 인코딩
+            tts_audio_base64 = None
+            if tts_audio_buffer:
+                tts_audio_base64 = base64.b64encode(tts_audio_buffer).decode('utf-8')
+                logger.info(f"🔊 TTS 오디오 Base64 인코딩 완료 ({len(tts_audio_base64)} 문자)")
+            
+            # 응답 데이터 구성
             response_data = {
                 "type": "voice_response",
                 "user_text": user_text,
                 "ai_text": response_text,
-                "audio_url": audio_url,
-                "audio_path": str(audio_path) if audio_path else None,
+                "tts_audio_base64": tts_audio_base64,  # Base64 인코딩된 오디오
                 "avatar_action": "talking",
                 "processing_time": "실시간",
                 "conversation_ended": conversation_ended,
@@ -382,16 +356,13 @@ async def websocket_endpoint(websocket: WebSocket, user_id: str):
         # 워커 시작 (최초 1회)
         start_worker_once()
 
-        # 시나리오 선택 메시지 전송
-        scenarios = service_manager.llm_service.get_available_scenarios()
-        scenario_options = "\n".join([f"{k}. {v}" for k, v in scenarios.items()])
+
         # 기본 시나리오(치매) 설정 및 평가 세션 시작
         default_scenario_id = "3"  # 치매 시나리오
         session["scenario_id"] = default_scenario_id
         session["session_start_time"] = datetime.now().isoformat()
         
         # CPX 결과 생성 (평가 시작)
-
         cpx_result_id = None
         async for db in get_db():
             cpx_service = CpxService(db)
@@ -404,15 +375,15 @@ async def websocket_endpoint(websocket: WebSocket, user_id: str):
             break
         
         # 세션에 CPX result_id와 user_id 저장
-        session["cpx_result_id"] = cpx_result_id
+        session["result_id"] = cpx_result_id
         session["user_id"] = user_id
         
         # LLM 서비스에 시나리오 설정
         service_manager.llm_service.select_scenario(default_scenario_id, user_id)
         
-        # 평가 세션 시작
+        # 평가 세션 시작 (result_id 전달)
         eval_session_id = await service_manager.evaluation_service.start_evaluation_session(
-            user_id, default_scenario_id
+            user_id, default_scenario_id, cpx_result_id
         )
         audio_processor.user_evaluation_sessions[user_id] = eval_session_id
         
@@ -420,12 +391,8 @@ async def websocket_endpoint(websocket: WebSocket, user_id: str):
         
         # 시작 메시지 전송
         await websocket.send_text(json.dumps({
-            # "type": "scenario_selection",
-            # "message": f"🏥 CPX 시스템에 연결되었습니다! ({user_id})\n\n📋 시나리오를 선택해주세요:\n{scenario_options}\n\n번호를 입력하고 음성으로 '시작'이라고 말씀해주세요.",
-            # "scenarios": scenarios,
-            # "avatar_action": "idle"
             "type": "session_started",
-            "message": f"🏥 CPX 시스템에 연결되었습니다! ({user_id})\n\n치매 환자 시나리오가 설정되었습니다.\n지금부터 환자에게 말을 걸어보세요.",
+            "message": f"🏥 CPX 시스템에 연결되었습니다! ({user_id})\n\n 기억력 저하 시나리오가 설정되었습니다.\n지금부터 환자에게 말을 걸어보세요.",
             "scenario_id": default_scenario_id,
             "avatar_action": "ready"
         }, ensure_ascii=False))

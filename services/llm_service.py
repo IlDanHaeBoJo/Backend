@@ -3,7 +3,7 @@ import json
 from typing import Dict, List
 from pathlib import Path
 
-from langchain.chat_models import ChatOpenAI
+from langchain_openai import ChatOpenAI
 from langchain.schema import HumanMessage, SystemMessage
 
 
@@ -43,95 +43,80 @@ class LLMService:
             return {}
 
     def _convert_scenario_to_prompt(self, scenario_data: Dict) -> str:
-        """시나리오 데이터를 LLM 프롬프트로 변환 - 모든 정보 포함"""
+        """시나리오 데이터를 답변 참고 정보로 변환"""
         if not scenario_data:
             return "시나리오 정보를 불러올 수 없습니다."
         
         scenario_info = scenario_data.get("scenario_info", {})
         history_taking = scenario_data.get("history_taking", {})
         physical_examination = scenario_data.get("physical_examination", {})
-        patient_education = scenario_data.get("patient_education", {})
         
         prompt_parts = []
         
-        # 환자 기본 정보
-        prompt_parts.append("【환자 기본 정보】")
-        prompt_parts.append(f"당신은 표준화 환자 \"{scenario_info.get('patient_name', 'Unknown')}\"입니다.")
-        prompt_parts.append(f"- {scenario_info.get('case_presentation', '')}")
-        prompt_parts.append(f"- Vital signs: {scenario_info.get('vital_signs', '')}")
-        prompt_parts.append(f"- 주요 진단: {scenario_info.get('primary_diagnosis', '')}")
+        # 환자 정보
+        prompt_parts.append("【환자 정보】")
+        prompt_parts.append(f"이름: {scenario_info.get('patient_name', 'Unknown')}")
+        prompt_parts.append(f"상황: {scenario_info.get('case_presentation', '')}")
+        prompt_parts.append(f"진단: {scenario_info.get('primary_diagnosis', '')}")
+        prompt_parts.append("")
+        prompt_parts.append("【환자 심리 상태】")
+        prompt_parts.append("- 증상 때문에 병원에 온 상황 → 걱정되고 불안함")
+        prompt_parts.append("- 본인의 건강 상태에 대한 우려와 궁금증")
+        prompt_parts.append("- 진단 결과나 치료에 대한 관심과 걱정")
+        prompt_parts.append("- 위 상황에 맞는 환자 성격으로 행동하세요")
         
-        # 감별 진단
-        diff_diagnoses = scenario_info.get("differential_diagnoses", [])
-        if diff_diagnoses:
-            prompt_parts.append(f"- 감별진단: {', '.join(diff_diagnoses)}")
+        # 의사 질문별 답변 가이드
+        prompt_parts.append("\n【의사 질문에 따른 답변 참고 정보】")
         
-        # 병력 청취 정보 (모든 카테고리)
-        prompt_parts.append("\n【병력 청취 정보】")
-        history_labels = {
-            "O_onset": "발병 시기/경과",
-            "L_location": "위치",
-            "D_duration": "지속 시간/패턴",
-            "Co_course": "경과/변화",
-            "Ex_experience": "과거 경험/가족력",
-            "C_character": "증상 특징",
-            "A_associated": "동반 증상",
-            "F_factor": "악화/완화 요인",
-            "E_exam": "기존 검사/진단",
-            "trauma_history": "외상력",
-            "past_medical_history": "과거 병력",
-            "medication_history": "복용 약물",
-            "family_history": "가족력",
-            "social_history": "사회력",
-            "gynecologic_history": "산부인과력"
+        # 주요 질문 카테고리별 답변 정보 매핑
+        question_answer_map = {
+            "발병시기/언제부터": history_taking.get("O_onset", ""),
+            "지속시간/얼마나": history_taking.get("D_duration", ""),
+            "경과/변화": history_taking.get("Co_course", ""),
+            "과거경험/가족력": history_taking.get("Ex_experience", ""),
+            "증상특징/어떤증상": history_taking.get("C_character", ""),
+            "동반증상": history_taking.get("A_associated", ""),
+            "악화완화요인": history_taking.get("F_factor", ""),
+            "기존검사": history_taking.get("E_exam", ""),
+            "외상력": history_taking.get("trauma_history", ""),
+            "과거병력": history_taking.get("past_medical_history", ""),
+            "복용약물": history_taking.get("medication_history", ""),
+            "가족력": history_taking.get("family_history", ""),
+            "사회력": history_taking.get("social_history", "")
         }
         
-        for key, label in history_labels.items():
-            if key in history_taking and history_taking[key]:
-                prompt_parts.append(f"- {label}: {history_taking[key]}")
+        for question_type, answer_info in question_answer_map.items():
+            if answer_info and answer_info != "해당없음":
+                prompt_parts.append(f"• {question_type} 관련 질문 시 → {answer_info}")
         
-        # 신체 검사 정보
-        physical_examination = scenario_data.get("physical_examination", {})
+        # 신체 검사 관련 정보
         if physical_examination:
-            prompt_parts.append("\n【신체 검사 정보】")
+            prompt_parts.append("\n【신체 검사 관련 답변 정보】")
             for key, value in physical_examination.items():
-                prompt_parts.append(f"- {key}: {value}")
+                if value:
+                    prompt_parts.append(f"• {key} 관련 → {value}")
         
-        # 환자 교육 정보
-        patient_education = scenario_data.get("patient_education", {})
+        # 환자 교육 관련 정보
+        patient_education = scenario_data.get("patient_education", "")
         if patient_education:
-            prompt_parts.append("\n【환자 교육 관련 정보】")
-            if isinstance(patient_education, dict):
-                for key, value in patient_education.items():
-                    prompt_parts.append(f"- {key}: {value}")
-            else:
-                prompt_parts.append(f"- 교육 내용: {patient_education}")
+            prompt_parts.append(f"\n【환자 교육 시 반응】")
+            prompt_parts.append("의사가 설명할 때:")
+            prompt_parts.append('- "네", "아...", "그렇구나" 같은 수용적 반응만')
+            prompt_parts.append("- 의사 말을 절대 반복하지 마세요")
+            prompt_parts.append("")
+            prompt_parts.append('의사가 "궁금한 점 있으세요?" 물으면:')
+            prompt_parts.append("- 아래 교육 내용에 언급 안된 것이 있으면 → 그것에 대해 1-2개 질문")
+            prompt_parts.append("- 없으면 → '없습니다' 또는 '괜찮습니다'")
+            prompt_parts.append(f"\n교육 내용: {patient_education}")
         
-        # 카테고리 정보
-        category = scenario_info.get("category", "")
-        if category:
-            prompt_parts.append(f"\n【진료 카테고리】: {category}")
-        
-        # 환자 역할 지침
-        prompt_parts.append("\n【환자 역할 지침】")
-        prompt_parts.append("⚠️ **중요: 위 정보를 바탕으로 환자 역할을 하되, 90%는 질문에만 간단히 답하고 10%만 추가 설명을 제공하세요**")
-        prompt_parts.append("")
-        prompt_parts.append("✅ **간결한 답변 스타일 (90%)**:")
-        prompt_parts.append('- "자꾸 깜빡깜빡하는 것 같아요"')
-        prompt_parts.append('- "한 6개월 전부터 그런 것 같습니다"')
-        prompt_parts.append('- "그런 건 없는 것 같습니다"')
-        prompt_parts.append('- "마트에 물건을 사러 갔는데 뭘 사러 갔는지 잘 생각이 안 나고요"')
-        prompt_parts.append("")
-        prompt_parts.append("📝 **가끔 추가 설명 (10%)**:")
-        prompt_parts.append('- 의사가 "편하게 얘기해보세요"라고 할 때만 자세히 설명')
-        prompt_parts.append("- 같은 질문을 반복할 때 조금 더 구체적으로 답변")
-        prompt_parts.append("- 중요한 증상에 대해서는 2-3개의 예시 제공")
-        prompt_parts.append("")
-        prompt_parts.append("🎭 **말하는 성격**:")
-        prompt_parts.append("- 치매 걱정이 있는 63세 남성")
-        prompt_parts.append("- 침착하고 성실하지만 **말수가 적음**")
-        prompt_parts.append("- 묻는 것에만 답하는 스타일")
-        prompt_parts.append("- 불필요한 추가 정보는 제공하지 마세요")
+        # 답변 스타일 가이드
+        prompt_parts.append("\n【답변 스타일】")
+        prompt_parts.append("- 일반인이 병원에서 말하는 방식으로 답변")
+        prompt_parts.append("- 의학 용어 사용 금지 → 쉬운 말로 표현")
+        prompt_parts.append("- 간단하고 자연스럽게 (1-2문장)")
+        prompt_parts.append("- 예시: '최근에 깜빡깜빡해요', '머리가 아파요', '잘 기억나요'")
+        prompt_parts.append("- 위 정보를 바탕으로 환자 입장에서 답변")
+        prompt_parts.append("- 의사가 구체적으로 물어보면 세부사항 추가 제공")
         
         return "\n".join(prompt_parts)
 
@@ -146,26 +131,22 @@ class LLMService:
         return self.user_states[user_id]
 
     def select_scenario(self, scenario_id: str, user_id: str) -> bool:
-        """사용자별 시나리오 선택하고 LLM 프롬프트 고정"""
+        """사용자별 시나리오 선택하고 LLM 프롬프트 고정 - 기억력 저하 시나리오 고정"""
         if not self.scenario_data:
             print(f"❌ [{user_id}] 시나리오 데이터가 로드되지 않았습니다.")
             return False
             
-        # 현재는 하나의 시나리오만 지원 (scenario_id "1")
-        expected_id = self.scenario_data.get("scenario_info", {}).get("scenario_id", "1")
-        if scenario_id != expected_id:
-            print(f"❌ [{user_id}] 지원하지 않는 시나리오: {scenario_id} (사용 가능: {expected_id})")
-            return False
-            
+        # 기억력 저하 시나리오(1번) 고정 사용
+        fixed_scenario_id = "1"
         user_state = self._get_or_create_user_state(user_id)
-        user_state['scenario'] = scenario_id
+        user_state['scenario'] = fixed_scenario_id
         
         # 공통 프롬프트 + 시나리오 정보 조합
         case_info = self._convert_scenario_to_prompt(self.scenario_data)
         user_state['system_prompt'] = self.base_prompt + "\n\n" + case_info
         
         patient_name = self.scenario_data.get("scenario_info", {}).get("patient_name", "Unknown")
-        print(f"✅ [{user_id}] 시나리오 선택: {patient_name} 케이스")
+        print(f"✅ [{user_id}] 기억력 저하 시나리오 자동 선택: {patient_name} 케이스")
         return True
 
     def get_available_scenarios(self) -> Dict[str, str]:
@@ -181,34 +162,25 @@ class LLMService:
         return {scenario_id: f"{patient_name} - {case_presentation}"}
 
     def _get_base_cpx_prompt(self) -> str:
-        """CPX 공통 기본 프롬프트"""
+        """CPX 기본 프롬프트"""
         return """
-당신은 의과대학 CPX(Clinical Performance Examination) 실기시험을 위한 한국어 가상 표준화 환자입니다.
+당신은 의과대학 CPX(Clinical Performance Examination) 실기시험을 위한 가상 표준화 환자입니다.
 
-【중요: 절대 의사가 되지 마세요!】
-- 당신은 병원에 온 환자입니다
-- 진료하지 마세요
-- "무슨 일로 오셨나요?", "어디가 아프세요?" 같은 의사 말은 절대 하지 마세요
-- 오직 환자로서 본인의 증상과 걱정만 이야기하세요
+【상황 설정】
+- 의대생이 의사 역할을 하며 당신에게 문진을 합니다
+- 당신은 특정 질환을 가진 환자 역할을 연기합니다
+- 실제 병원 진료실과 같은 상황입니다
 
-【환자 역할】
-- 의사의 질문에 환자로서 대답하세요
-- 본인의 아픈 곳과 증상을 표현하세요  
-- 의사의 진료를 받는 입장입니다
-- 걱정되는 마음을 솔직하게 표현하세요
+【금지】
+- 의사 역할 금지 (질문, 진단, 처방 등)
+- 의사 말 반복 금지
+- 불필요한 추가 설명 금지
 
-【말하는 방식】
- **핵심 룰: 의사가 묻는 것에만 답하고 부가적인 설명 금지**
-- 질문 한 개 → 답변 한 개 (끝)
-- 묻지 않은 내용은 절대 말하지 마세요
-- "편하게 얘기해보세요"라고 할 때만 2-3개 예시 제공
-- 한국어로 일반인처럼 자연스럽게 말하기
-- "아파요", "쓰려요", "답답해요", "불안해요" 같은 자연스러운 표현
-- 감정을 솔직하게 표현 (걱정, 불안, 아픔, 두려움 등)
-- 질문에 대해 모르면 "잘 모르겠어요" 솔직하게 말하기
-- 의학 지식을 과시하지 마세요
-
-의사가 아닌 환자 역할만 하세요!
+【답변 방식】
+- 아래 시나리오 정보를 바탕으로 환자 역할 연기
+- 질문받은 것만 간단히 답변
+- 모르면 "잘 모르겠어요"
+- 자연스럽고 솔직하게
 """
 
 
@@ -225,46 +197,62 @@ class LLMService:
         memory = user_state['memories']
 
         # 메시지 구성 (사용자별 시나리오 프롬프트 사용)
+        print(f"🔍 [{user_id}] 시스템 프롬프트 길이: {len(user_state['system_prompt'])} 문자")
+        print(f"🔍 [{user_id}] 시스템 프롬프트 앞부분: {user_state['system_prompt'][:200]}...")
         messages = [SystemMessage(content=user_state['system_prompt'])]
 
         # 최근 대화 추가 (최근 5개만)
         for msg in memory[-5:]:
             messages.extend(msg)
 
-        # 현재 입력
-        messages.append(HumanMessage(content=user_input))
-
-        # LLM 호출
-        response = self.llm(messages)
-        response_text = response.content.strip()
-
-        # 사용자별 대화 기록 저장
-        memory.append([
-            HumanMessage(content=user_input),
-            response
-        ])
-
-        # 대화 종료 의도 감지
+        # 대화 종료 의도 사전 감지
         conversation_ended = False
-        if self._detect_conversation_ending(user_input, response_text):
-            response_text = await self._generate_natural_farewell(
-                user_input, response_text, user_state, user_id
-            )
+        if self._detect_conversation_ending(user_input):
+            # 마무리 인사 직접 생성
+            response_text = await self._generate_natural_farewell(user_input, user_state, user_id)
             conversation_ended = True
             print(f"🏁 [{user_id}] 대화 종료 감지됨 - 음성 처리 중단됩니다")
+        else:
+            # 일반 대화 - LLM 호출
+            messages.append(HumanMessage(content=user_input))
+            response = self.llm(messages)
+            response_text = response.content.strip()
+            
+            # 사용자별 대화 기록 저장
+            memory.append([
+                HumanMessage(content=user_input),
+                response
+            ])
 
         return {"text": response_text, "conversation_ended": conversation_ended}
 
-    def _detect_conversation_ending(self, user_input: str, ai_response: str) -> bool:
+    def _detect_conversation_ending(self, user_input: str) -> bool:
         """대화 종료 의도 감지 (의사의 마무리 멘트 감지)"""
         # 의사(사용자)가 진료 마무리할 때 하는 말들
         doctor_ending_keywords = [
-            "처방해드릴게요", "처방해드리겠습니다", "약을 드리겠습니다",
-            "괜찮으실 거예요", "괜찮을 거예요", "걱정하지 마세요",
-            "조심하세요", "몸조심하세요", "건강하세요", 
-            "더 아프시면 오세요", "악화되면 오세요", "변화있으면 오세요",
-            "안녕히 가세요", "들어가세요", "수고하셨습니다",
-            "진료 마치겠습니다", "이상으로", "오늘은 여기까지"
+            # 처방 관련
+            "처방해드릴게요", "처방해드리겠습니다", "약을 드리겠습니다", "약 받으세요",
+            
+            # 안심시키는 말
+            "괜찮으실 거예요", "괜찮을 거예요", "걱정하지 마세요", "크게 걱정 안하셔도",
+            
+            # 건강 관련 당부
+            "조심하세요", "몸조심하세요", "건강하세요", "조심히 가세요", "조심히 들어가세요",
+            "몸 관리 잘하세요", "무리하지 마세요", "푹 쉬세요",
+            
+            # 재방문 안내
+            "더 아프시면 오세요", "악화되면 오세요", "변화있으면 오세요", "이상하면 다시 오세요",
+            "문제되면 언제든 오세요", "필요하면 다시 오세요",
+            
+            # 인사말
+            "안녕히 가세요", "들어가세요", "수고하셨습니다", "고생하셨습니다",
+            
+            # 진료 마무리
+            "진료 마치겠습니다", "이상으로", "오늘은 여기까지", "진료 끝내겠습니다",
+            "이만 마치겠습니다", "진료 완료하겠습니다",
+            
+            # 환자 마무리 응답도 감지
+            "감사합니다", "고맙습니다", "안녕히 계세요", "좋은 하루", "검사 후에 뵙겠습니다"
         ]
         
         # 의사의 마무리 멘트 감지
@@ -272,44 +260,27 @@ class LLMService:
         
         return doctor_ending
 
-    async def _generate_natural_farewell(self, doctor_input: str, ai_response: str, user_state: dict, user_id: str) -> str:
-        """LLM을 사용해 대화 맥락에 맞는 자연스러운 마무리 인사 생성"""
+    async def _generate_natural_farewell(self, doctor_input: str, user_state: dict, user_id: str) -> str:
+        """간단한 마무리 인사 생성"""
         
-        # 마무리 인사 생성을 위한 특별 프롬프트
+        # 매우 간단한 마무리 인사 프롬프트
         farewell_prompt = f"""
-{user_state['system_prompt']}
+의사: "{doctor_input}"
 
-【중요: 지금은 진료가 끝나는 상황입니다】
-의사가 마무리 멘트를 했으므로, 환자로서 자연스럽고 감사한 마음을 담아 인사하세요.
-
-의사의 마지막 말: "{doctor_input}"
-당신의 일반적인 응답: "{ai_response}"
-
-이제 의사에게 감사 인사와 함께 자연스럽게 작별 인사를 하세요.
-- 의사에 대한 감사 표현
-- 처방이나 조언에 대한 수용적 태도  
-- 환자 캐릭터에 맞는 말투 유지
-- 너무 길지 않게, 자연스럽게
-
-응답은 위의 일반적인 응답에 자연스럽게 이어지도록 작성하세요.
+환자로서 1문장으로 간단히 감사 인사하세요.
+예시: "네, 감사합니다 선생님."
 """
         
-        # LLM에게 자연스러운 마무리 인사 요청
-        farewell_messages = [SystemMessage(content=farewell_prompt)]
-        farewell_messages.append(HumanMessage(content="자연스러운 마무리 인사를 해 주세요."))
-        
         try:
+            farewell_messages = [SystemMessage(content=farewell_prompt)]
             farewell_response = self.llm(farewell_messages)
-            natural_farewell = farewell_response.content.strip()
+            farewell = farewell_response.content.strip()
             
-            # 기존 응답과 자연스럽게 결합
-            return f"{ai_response}\n\n{natural_farewell}"
+            return farewell
             
         except Exception as e:
             print(f"❌ 마무리 인사 생성 오류: {e}")
-            # 오류 시 기본 마무리 인사 사용
-            default_farewell = "네, 감사합니다 선생님. 안녕히 계세요."
-            return f"{ai_response}\n\n{default_farewell}"
+            return "네, 감사합니다 선생님."
 
     def clear_user_memory(self, user_id: str):
         """사용자 상태 전체 초기화 (대화 기록 + 시나리오)"""

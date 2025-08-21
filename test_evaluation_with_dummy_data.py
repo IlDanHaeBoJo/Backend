@@ -3,7 +3,7 @@ import json
 from datetime import datetime
 from typing import List, Dict, Any
 
-from services.evaluation_service import EvaluationService
+from services.evaluation_service_clean import EvaluationService
 
 
 class DummyDataGenerator:
@@ -61,7 +61,7 @@ class DummyDataGenerator:
             # 의사 발언 (SER 감정 분석 포함)
             doctor_entry = {
                 "content": doctor_text,
-                "role": "student",
+                "role": "doctor",
                 "emotion_analysis": self._generate_doctor_emotion(i),
                 "timestamp": datetime.now().isoformat(),
                 "audio_file_path": f"dummy_doctor_{i:02d}.wav"
@@ -107,11 +107,24 @@ class DummyDataGenerator:
         print("\n🔍 LangGraph 기반 평가 시스템 실행 중...")
         
         try:
-            evaluation_result = await self.evaluation_service.evaluate_conversation(
+            # 테스트 세션 생성
+            session_id = await self.evaluation_service.start_evaluation_session(
                 user_id="1",
-                scenario_id="memory_impairment",
-                conversation_log=conversations
+                scenario_id="1"
             )
+            
+            # 대화 데이터를 세션에 추가
+            for conversation in conversations:
+                await self.evaluation_service.add_conversation_entry(
+                    session_id=session_id,
+                    audio_file_path="test_audio.wav",  # 테스트용 더미 파일
+                    text=conversation.get("content", ""),
+                    role=conversation.get("role", "doctor"),
+                    emotion_analysis=None
+                )
+            
+            # 종합 평가 실행
+            evaluation_result = await self.evaluation_service.end_evaluation_session(session_id)
             
             print("✅ 평가 완료!")
             
@@ -124,7 +137,7 @@ class DummyDataGenerator:
     def generate_conversation_summary(self, conversations: List[Dict]) -> Dict:
         """대화 요약 통계 생성"""
         
-        doctor_messages = [c for c in conversations if c["role"] == "student"]
+        doctor_messages = [c for c in conversations if c["role"] == "doctor"]
         patient_messages = [c for c in conversations if c["role"] == "patient"]
         
         # 감정 분석 통계

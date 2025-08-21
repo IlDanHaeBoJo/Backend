@@ -78,9 +78,70 @@ class SERService:
             self.emotion_processor = None
             return False
     
+    async def analyze_emotion_from_buffer(self, audio_buffer: bytearray) -> Dict:
+        """
+        오디오 버퍼에서 직접 감정 분석
+        
+        Args:
+            audio_buffer: 분석할 오디오 버퍼 (16-bit PCM)
+            
+        Returns:
+            감정 분석 결과 딕셔너리
+        """
+        # 모델이 로드되지 않았으면 로드 시도
+        if self.emotion_model is None:
+            model_loaded = await self.load_model()
+            if not model_loaded:
+                return {"error": "감정 분석 모델을 로드할 수 없습니다"}
+        
+        try:
+            if not audio_buffer or len(audio_buffer) == 0:
+                return {"error": "오디오 버퍼가 비어있습니다"}
+            
+            # 오디오 전처리 (버퍼에서 직접)
+            audio_data = await self._preprocess_audio_from_buffer(audio_buffer)
+            if audio_data is None:
+                return {"error": "오디오 전처리 실패"}
+            
+            # 감정 분석 수행
+            with torch.no_grad():
+                inputs = {
+                    "input_values": audio_data,
+                    "attention_mask": None
+                }
+                
+                outputs = self.emotion_model(**inputs)
+                logits = outputs['emotion_logits']
+                
+                # 예측 결과 계산
+                probabilities = torch.nn.functional.softmax(logits, dim=-1)
+                predicted_id = torch.argmax(logits, dim=-1).item()
+                confidence = probabilities[0][predicted_id].item()
+                
+                # 예측 감정 결과
+                predicted_emotion = self.emotion_labels[predicted_id]
+                
+                # 모든 감정별 확률
+                emotion_scores = {
+                    emotion: probabilities[0][i].item() 
+                    for i, emotion in enumerate(self.emotion_labels)
+                }
+                
+                return {
+                    "success": True,
+                    "predicted_emotion": predicted_emotion,
+                    "confidence": confidence,
+                    "emotion_scores": emotion_scores,
+                    "source": "audio_buffer"
+                }
+                
+        except Exception as e:
+            logger.error(f"감정 분석 중 오류 발생: {e}")
+            return {"error": f"감정 분석 중 오류 발생: {e}"}
+    
     async def analyze_emotion(self, audio_file_path: str) -> Dict:
         """
-        음성 파일의 감정 분석
+        음성 파일의 감정 분석 (호환성을 위한 레거시 메서드)
         
         Args:
             audio_file_path: 분석할 음성 파일 경로
@@ -141,14 +202,50 @@ class SERService:
             logger.error(f"감정 분석 중 오류 발생: {e}")
             return {"error": f"감정 분석 중 오류 발생: {e}"}
     
+    async def _preprocess_audio_from_buffer(self, audio_buffer: bytearray) -> Optional[torch.Tensor]:
+        """오디오 버퍼 전처리 (Wav2Vec2용)"""
+        try:
+            # 16-bit PCM 버퍼를 numpy 배열로 변환
+            audio_data = np.frombuffer(audio_buffer, dtype=np.int16)
+            
+            # float32로 정규화 (-1.0 ~ 1.0)
+            audio = audio_data.astype(np.float32) / 32768.0
+            
+            # 길이 제한 (최대 15초)
+            max_duration = 15.0
+            target_length = int(16000 * max_duration)
+            
+            if len(audio) > target_length:
+                # 가운데 부분 사용
+                start_idx = np.random.randint(0, len(audio) - target_length + 1)
+                audio = audio[start_idx:start_idx + target_length]
+            elif len(audio) < target_length:
+                # 패딩 추가
+                pad_length = target_length - len(audio)
+                audio = np.pad(audio, (0, pad_length), mode='constant', constant_values=0)
+            
+            # Wav2Vec2 processor로 변환
+            inputs = self.emotion_processor(
+                audio,
+                sampling_rate=16000,
+                return_tensors="pt",
+                padding=True
+            )
+            
+            return inputs.input_values.squeeze(0)
+            
+        except Exception as e:
+            logger.error(f"오디오 버퍼 전처리 오류: {e}")
+            return None
+    
     async def _preprocess_audio(self, file_path: str) -> Optional[torch.Tensor]:
         """오디오 전처리 (Wav2Vec2용)"""
         try:
             # 오디오 로드 (16kHz로 리샘플링)
             audio, sr = librosa.load(file_path, sr=16000, res_type='kaiser_fast')
             
-            # 길이 제한 (최대 10초)
-            max_duration = 10.0
+            # 길이 제한 (최대 15초)
+            max_duration = 15.0
             target_length = int(16000 * max_duration)
             
             if len(audio) > target_length:

@@ -155,7 +155,7 @@ print(f"모델: {model_config.model_name}")
 print(f"감정 클래스: {model_config.emotion_labels}")
 
 # 설정 수정
-model_config.max_duration = 8.0  # 최대 오디오 길이 변경
+model_config.max_duration = 15.0  # 최대 오디오 길이 변경
 ```
 
 ### 훈련 설정
@@ -234,7 +234,7 @@ from SER.preprocessing import AudioPreprocessor
 
 preprocessor = AudioPreprocessor(
     target_sr=16000,
-    max_duration=10.0,
+    max_duration=15.0,
     normalize=True
 )
 

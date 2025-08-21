@@ -1,42 +1,40 @@
+"""
+CPX 평가 서비스 - 정리된 버전
+의료 시뮬레이션 대화 평가를 위한 서비스
+"""
+
 from typing import Dict, List, Optional, TypedDict, Annotated
 from datetime import datetime
 from pathlib import Path
 import json
-import asyncio
-import aiofiles
 import logging
 import os
-import sys
 import re
-from collections import Counter
+import time
 
-# LangGraph 관련 import
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage, SystemMessage, BaseMessage as AnyMessage
 from langgraph.graph import StateGraph, END
 from langgraph.graph.message import add_messages
 
-# CPX 관련 import
 from services.cpx_service import CpxService
 from core.config import get_db
 
-# RAG 가이드라인 import
 from RAG.guideline_retriever import GuidelineRetriever
 
-# CPX 평가 상태 정의 (Multi-Step Reasoning 전용)
+logger = logging.getLogger(__name__)
+
+
 class CPXEvaluationState(TypedDict):
-    """CPX 평가 상태 정의 - Multi-Step Reasoning 전용"""
+    """CPX 평가 상태 정의"""
     # 입력 데이터
     user_id: str
     scenario_id: str
     conversation_log: List[Dict]
     
-    # Multi-Step Reasoning 결과들 (핵심)
-    medical_context_analysis: Optional[Dict]
-    question_intent_analysis: Optional[Dict]
+    # 평가 결과들
     completeness_assessment: Optional[Dict]
     quality_evaluation: Optional[Dict]
-    appropriateness_validation: Optional[Dict]
     
     # 종합 평가 결과
     comprehensive_evaluation: Optional[Dict]
@@ -51,12 +49,13 @@ class CPXEvaluationState(TypedDict):
     # 메시지 추적
     messages: Annotated[List[AnyMessage], add_messages]
 
+
 class EvaluationService:
+    """CPX 평가 서비스"""
+    
     def __init__(self):
         """CPX 평가 서비스 초기화"""
-        # 기존 하드코딩된 시나리오 정보는 제거하고 JSON 기반으로 통합
-        
-        self.session_data = {}  # 세션별 평가 데이터
+        self.session_data = {}
         
         # 평가 결과 저장 디렉터리
         self.evaluation_dir = Path("evaluation_results")
@@ -70,9 +69,34 @@ class EvaluationService:
         # RAG 기반 가이드라인 검색기 초기화
         self.guideline_retriever = None
         self._initialize_guideline_retriever()
-        
-        # 시나리오별 적용 요소들 정의
-        self.scenario_applicable_elements = self._initialize_scenario_elements()
+
+    # ================================
+    # 1. 초기화 관련 메서드들
+    # ================================
+    
+    def _initialize_langgraph_components(self):
+        """LangGraph 컴포넌트들 초기화"""
+        try:
+            # OpenAI API 설정
+            api_key = os.getenv("OPENAI_API_KEY")
+            if api_key:
+                self.llm = ChatOpenAI(
+                    openai_api_key=api_key,
+                    model_name="gpt-4o",
+                    temperature=0.1,
+                    max_tokens=4000
+                )
+                
+                # 워크플로우 생성
+                self.workflow = self._create_evaluation_workflow()
+                print("✅ LangGraph 텍스트 평가 컴포넌트 초기화 완료")
+            else:
+                print("⚠️ OPENAI_API_KEY가 설정되지 않아 텍스트 평가 기능을 사용할 수 없습니다")
+                
+        except Exception as e:
+            print(f"❌ LangGraph 컴포넌트 초기화 실패: {e}")
+            self.llm = None
+            self.workflow = None
 
     def _initialize_guideline_retriever(self):
         """RAG 기반 가이드라인 검색기 초기화"""
@@ -92,191 +116,188 @@ class EvaluationService:
             print(f"❌ 가이드라인 검색기 초기화 오류: {e}")
             self.guideline_retriever = None
 
-    def _initialize_scenario_elements(self) -> Dict:
-        """시나리오별 적용 요소들 초기화 - scenarios/ 디렉토리에서 로드"""
-        scenario_elements = {}
-        scenario_dir = Path("scenarios")
-        
-        if not scenario_dir.exists():
-            print("⚠️ scenarios 디렉토리가 없습니다.")
-            return {}
-        
-        for json_file in scenario_dir.glob("*.json"):
-            try:
-                with open(json_file, 'r', encoding='utf-8') as f:
-                    data = json.load(f)
-                    
-                scenario_info = data.get("scenario_info", {})
-                category = scenario_info.get("category", "unknown")
-                
-                # 시나리오 ID를 키로 사용 (예: memory_impairment)
-                scenario_id = category.replace(" ", "_").lower()
-                
-                scenario_elements[scenario_id] = {
-                    "name": category,
-                    "description": scenario_info.get("case_presentation", ""),
-                    "patient_name": scenario_info.get("patient_name", ""),
-                    "primary_diagnosis": scenario_info.get("primary_diagnosis", ""),
-                    "differential_diagnoses": scenario_info.get("differential_diagnoses", []),
-                    "applicable_areas": [
-                        "history_taking",
-                        "physical_examination", 
-                        "patient_education"
-                    ]
-                }
-                
-                print(f"✅ 시나리오 로드: {category} ({json_file.name})")
-                
-            except json.JSONDecodeError as e:
-                print(f"❌ JSON 파싱 오류 ({json_file.name}): {e}")
-            except Exception as e:
-                print(f"❌ 시나리오 로드 오류 ({json_file.name}): {e}")
-        
-        return scenario_elements
 
-    def _get_scenario_category(self, scenario_id: str) -> Optional[str]:
-        """시나리오 파일에서 카테고리 정보 로드"""
+
+    # ================================
+    # 2. 세션 관리 메서드들 (외부 API)
+    # ================================
+    
+    async def start_evaluation_session(self, user_id: str, scenario_id: str, result_id: Optional[int] = None) -> str:
+        """평가 세션 시작"""
+        session_id = f"{user_id}_{scenario_id}_{int(datetime.now().timestamp())}"
+        
+        self.session_data[session_id] = {
+            "user_id": user_id,
+            "scenario_id": scenario_id,
+            "result_id": result_id,  # CPX result_id 저장
+            "start_time": datetime.now(),
+            "conversation_entries": [],  # 실시간 대화 데이터
+            "status": "active"
+        }
+        
+        return session_id
+
+    async def add_conversation_entry(self, session_id: str, text: str, role: str, emotion_analysis: Optional[Dict] = None) -> Dict:
+        """실시간 대화 엔트리 추가 (SER 결과는 queue에서 전달받음)"""
+        if session_id not in self.session_data:
+            return {"error": "세션을 찾을 수 없습니다"}
+        
         try:
-            scenario_path = Path(f"scenarios/neurology_dementia_case.json")  # 현재는 하나의 시나리오만
-            if not scenario_path.exists():
-                return None
+            timestamp = datetime.now()
             
-            with open(scenario_path, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-                return data.get("scenario_info", {}).get("category")
+            # SER 결과 로깅 (queue에서 전달받은 경우)
+            if emotion_analysis:
+                print(f"🎭 [{session_id}] 감정 분석 결과 수신: {emotion_analysis['predicted_emotion']} ({emotion_analysis['confidence']:.2f})")
+            
+            # 대화 엔트리 생성
+            conversation_entry = {
+                "timestamp": timestamp.isoformat(),
+                "text": text,
+                "emotion": emotion_analysis,
+                "role": role,  # "doctor" (의사) or "patient" (환자)
+            }
+            
+            # 세션 데이터에 추가
+            session = self.session_data[session_id]
+            session["conversation_entries"].append(conversation_entry)
+            
+            print(f"📝 [{session_id}] 대화 엔트리 추가: {role} - {text[:50]}...")
+            
+            return {
+                "success": True,
+                "entry": conversation_entry,
+                "total_entries": len(session["conversation_entries"])
+            }
+            
         except Exception as e:
-            print(f"❌ 시나리오 카테고리 로드 실패: {e}")
-            return None
+            print(f"❌ [{session_id}] 대화 엔트리 추가 실패: {e}")
+            return {"error": str(e)}
 
-    def _parse_structured_sections(self, document) -> dict:
-        """문서에서 구조화된 섹션 파싱 - RAG 가이드라인 JSON 형식 처리"""
-        structured_sections = {}
+    async def end_evaluation_session(self, session_id: str) -> Dict:
+        """평가 세션 종료 및 종합 평가 실행"""
+        if session_id not in self.session_data:
+            return {"error": "세션을 찾을 수 없습니다"}
         
-        # 문서를 문자열로 변환
-        if hasattr(document, 'page_content'):
-            document_text = document.page_content
-        elif isinstance(document, dict):
-            document_text = document.get('content', '') or document.get('page_content', '') or str(document)
-        else:
-            document_text = str(document)
+        session = self.session_data[session_id]
+        session["end_time"] = datetime.now()
+        session["status"] = "completed"
         
-        # 섹션 패턴: 【섹션명】
-        import re
-        section_pattern = re.compile(r'【([^】]+)】')
-        # 항목 패턴: • 또는 - 로 시작하는 줄
-        bullet_pattern = re.compile(r'^\s*[•\-\*]\s+(.+)$', re.MULTILINE)
+        # 종합 평가 실행
+        evaluation_result = await self._comprehensive_evaluation(session_id, session)
         
-        sections = section_pattern.split(document_text)
+        # CPX 데이터베이스 업데이트
+        await self._update_cpx_database_after_evaluation(session_id, evaluation_result)
         
-        for i in range(1, len(sections), 2):
-            if i + 1 < len(sections):
-                section_name = sections[i].strip()
-                section_content = sections[i + 1]
-                
-                # 섹션 내용에서 필수 항목 추출
-                required_items = bullet_pattern.findall(section_content)
-                if required_items:
-                    # 각 섹션을 딕셔너리 형태로 저장 (required_questions 키 사용)
-                    structured_sections[section_name] = {
-                        'required_questions': required_items,
-                        'required_actions': []  # 기본값
-                    }
-        
-        return structured_sections
+        return evaluation_result
 
 
 
-    def evaluate_area_simple(self, conversation_text: str, area_name: str, structured_sections: dict) -> dict:
-        """단일 단계 RAG 가이드라인 비교 평가 - GPT-4o 통합 평가"""
-        
-        # 가이드라인 텍스트 구성
-        detailed_guideline_text = ""
-        for section_name, section_data in structured_sections.items():
-            required_items = section_data.get('required_questions', []) + section_data.get('required_actions', [])
-            if required_items:
-                detailed_guideline_text += f"\n【{section_name}】\n"
-                detailed_guideline_text += "이 항목에서 확인해야 할 구체적 내용들:\n"
-                for item in required_items:
-                    detailed_guideline_text += f"  • {item}\n"
-                detailed_guideline_text += "\n"
-        
-        # 대화 텍스트를 의사/환자별로 분리
-        doctor_text, patient_text = self._separate_conversation_by_role(conversation_text)
-        
-        print(f"[통합 평가] {area_name} 영역 평가 시작...")
-        
-        prompt = f"""{area_name} 영역 통합 평가
-
-전체 대화:
-{conversation_text}
-
-{area_name} 항목들:
-{detailed_guideline_text}
-
-**영역 맥락 파악**: 각 발언의 목적과 상황을 고려하여 {area_name} 영역에 해당하는지 판단
-- 병력 청취: 환자로부터 정보를 수집하려는 의도의 발언
-- 신체 진찰: 물리적 검사를 수행하거나 준비하는 발언  
-- 환자 교육: 의학적 정보를 환자에게 전달하거나 설명하는 발언
-
-**맥락 판단 원칙**:
-1. **발언의 주된 목적** 파악:
-   - 정보 수집 목적 → 병력 청취
-   - 검사 수행 목적 → 신체 진찰  
-   - 정보 전달 목적 → 환자 교육
-2. **발언 형태** 고려:
-   - 질문형 (물어보는 것) → 병력 청취
-   - 설명형 (알려주는 것) → 환자 교육
-   - 행동형 (검사하는 것) → 신체 진찰
-3. **{area_name} 영역 전용**: 해당 영역 목적의 발언만 포함
-4. **타 영역 제외**: 목적이 다른 영역의 발언은 절대 포함 금지
-
-평가 기준:
-1. **영역 맥락 확인**: 각 발언이 {area_name} 영역에서 나온 것인지 먼저 확인
-2. **관대한 평가**: 해당 주제가 어느 정도 다뤄졌으면 completed: true로 판단
-3. **의미 기반 매칭**: 정확한 단어가 아니어도 유사한 의미나 관련 내용이면 인정
-4. **원문 복사**: evidence는 위 대화에서 한 글자도 바꾸지 말고 정확히 복사-붙여넣기만 할 것
-5. **변경 금지**: 절대 단어 추가/삭제/변경 금지
-6. **존재 확인**: 대화에 없는 내용 절대 만들지 말 것
-7. **영역 제한**: 다른 영역(병력청취/신체진찰/환자교육)의 발언은 절대 포함하지 말 것
-
-JSON 응답:
-{{
-{', '.join([f'    "{section_name}": {{"completed": true/false, "evidence": []}}' for section_name in structured_sections.keys()])}
-}}"""
-        
-        result = self._process_evaluation_response(prompt, area_name, structured_sections, stage="통합")
-        
-        print(f"[검증] evidence 실제 존재 여부 확인...")
-        print(f"[검증] 대화 텍스트 샘플: {conversation_text[:200]}...")
-        # evidence 검증 단계 추가
-        verified_result = self._verify_evidence_exists(conversation_text, result)
-        
-        return verified_result
+    # ================================
+    # 3. LangGraph 워크플로우 관련
+    # ================================
     
-    def _separate_conversation_by_role(self, conversation_text: str) -> tuple:
-        """대화 텍스트를 의사 발언과 환자 발언으로 분리"""
+    def _create_evaluation_workflow(self):
+        """CPX 평가 워크플로우 생성 (3단계)"""
+        workflow = StateGraph(CPXEvaluationState)
+
+        workflow.add_node("initialize", self._initialize_evaluation)
+        workflow.add_node("step1_rag_completeness", self._evaluate_rag_completeness)
+        workflow.add_node("step2_quality_assessment", self._evaluate_quality_assessment)
+        workflow.add_node("step3_comprehensive_results", self._generate_comprehensive_results)
+
+        workflow.set_entry_point("initialize")
+        workflow.add_edge("initialize", "step1_rag_completeness")
+        workflow.add_edge("step1_rag_completeness", "step2_quality_assessment")
+        workflow.add_edge("step2_quality_assessment", "step3_comprehensive_results")
+        workflow.add_edge("step3_comprehensive_results", END)
+
+        return workflow.compile()
+
+    def _initialize_evaluation(self, state: CPXEvaluationState) -> CPXEvaluationState:
+        """평가 초기화"""
+        print(f"🎯 [{state['user_id']}] CPX 평가 초기화 - 시나리오: {state['scenario_id']}")
         
-        lines = conversation_text.strip().split('\n')
-        doctor_lines = []
-        patient_lines = []
+        metadata = {
+            "user_id": state["user_id"],
+            "scenario_id": state["scenario_id"],
+            "evaluation_date": datetime.now().isoformat(),
+            "conversation_duration_minutes": len(state["conversation_log"]) * 0.5,
+            "voice_recording_path": "s3로 저장",
+            "conversation_transcript": json.dumps(state["conversation_log"], ensure_ascii=False)
+        }
         
-        for line in lines:
-            line = line.strip()
-            if not line:
-                continue
-                
-            if line.startswith('의사:'):
-                doctor_lines.append(line)
-            elif line.startswith('환자:'):
-                patient_lines.append(line)
+        return {
+            **state,
+            "evaluation_metadata": metadata,
+            "messages": [HumanMessage(content="CPX 평가를 시작합니다.")]
+        }
+
+    def _evaluate_rag_completeness(self, state: CPXEvaluationState) -> CPXEvaluationState:
+        """1단계: RAG 기반 완성도 평가 (병력청취, 신체진찰, 환자교육)"""
+        print(f"📋 [{state['user_id']}] 1단계: RAG 기반 완성도 평가 시작")
         
-        doctor_text = '\n'.join(doctor_lines)
-        patient_text = '\n'.join(patient_lines)
+        conversation_text = self._build_conversation_text(state["conversation_log"])
+        scenario_id = state["scenario_id"]
         
-        print(f"대화 분리 완료 - 의사 발언: {len(doctor_lines)}개, 환자 발언: {len(patient_lines)}개")
+        # 시나리오에서 카테고리 정보 로드
+        scenario_category = self._get_scenario_category(scenario_id)
+        if not scenario_category:
+            raise ValueError(f"시나리오 '{scenario_id}'의 카테고리를 찾을 수 없습니다.")
+                    
+        # 3개 영역별 청크 기반 평가
+        areas_evaluation = {}
         
-        return doctor_text, patient_text
-    
+        for area_key, area_name in [("history_taking", "병력 청취"), ("physical_examination", "신체 진찰"), ("patient_education", "환자 교육")]:
+            # RAG에서 가이드라인 가져오기
+            criteria_data = self.guideline_retriever.get_evaluation_criteria(scenario_category, area_name)
+            documents = criteria_data.get("documents", [])
+            
+            if not documents or not documents[0]:
+                raise ValueError(f"❌ {area_name} 가이드라인을 찾을 수 없습니다.")
+            
+            # 구조화된 섹션 파싱
+            structured_sections = self._parse_structured_sections(documents[0])
+            
+            # 간단한 RAG 가이드라인 비교 평가 실행
+            areas_evaluation[area_key] = self._evaluate_area_simple(
+                conversation_text, area_name, structured_sections
+            )
+        
+        # 전체 완성도 점수 계산
+        total_guidelines = sum(area.get("total_guidelines", 0) for area in areas_evaluation.values())
+        completed_guidelines = sum(area.get("completed_guidelines", 0) for area in areas_evaluation.values())
+        overall_completeness = completed_guidelines / total_guidelines if total_guidelines > 0 else 0
+        
+        # 전체 완료/누락 항목 수집 (간단화)
+        all_completed_items = []
+        all_missing_items = []
+        for area_data in areas_evaluation.values():
+            completed_count = area_data.get("completed_guidelines", 0)
+            total_count = area_data.get("total_guidelines", 0)
+            missing_count = total_count - completed_count
+            
+            if completed_count > 0:
+                all_completed_items.append(f"{area_data.get('area_name', 'Unknown')}: {completed_count}개 항목 완료")
+            if missing_count > 0:
+                all_missing_items.append(f"{area_data.get('area_name', 'Unknown')}: {missing_count}개 항목 누락")
+        
+        rag_completeness_result = {
+            "category": scenario_category or scenario_id,
+            "overall_completeness": round(overall_completeness, 2),
+            "areas_evaluation": areas_evaluation,
+            "total_completed_items": len(all_completed_items),
+            "total_missing_items": len(all_missing_items),
+            "evaluation_method": "rag_three_areas"
+        }
+        
+        print(f"✅ [{state['user_id']}] 1단계: RAG 기반 완성도 평가 완료 - 완성도: {overall_completeness:.2%}")
+        
+        return {
+            **state,
+            "completeness_assessment": rag_completeness_result,
+            "messages": state["messages"] + [HumanMessage(content=f"1단계: RAG 기반 완성도 평가 완료 - {overall_completeness:.1%}")]
+        }
+
     def _evaluate_quality_assessment(self, state: CPXEvaluationState) -> CPXEvaluationState:
         """2단계: 대화 품질 평가 (친절함, 공감, 전문성 등)"""
         print(f"⭐ [{state['user_id']}] 2단계: 품질 평가 시작")
@@ -287,7 +308,7 @@ JSON 응답:
         quality_prompt = f"""
 당신은 의학교육 평가 전문가입니다. 다음 CPX 대화의 품질을 4가지 기준으로 평가하세요.
 
-【학생-환자 대화】:
+【의사-환자 대화】:
 {conversation_text}
 
 【시나리오】: {scenario_id}
@@ -335,7 +356,6 @@ JSON 응답:
             print(f"[품질] LLM 응답 원문:\n{result_text[:300]}...")
             
             # JSON 파싱
-            import re
             json_match = re.search(r'\{.*\}', result_text, re.DOTALL)
             if json_match:
                 json_str = json_match.group()
@@ -375,7 +395,7 @@ JSON 응답:
                     "quality_improvements": ["품질 평가 오류로 기본값 사용"]
                 }
             }
-    
+
     def _generate_comprehensive_results(self, state: CPXEvaluationState) -> CPXEvaluationState:
         """3단계: 종합 평가 및 최종 결과 생성"""
         print(f"🎯 [{state['user_id']}] 3단계: 종합 평가 시작")
@@ -400,11 +420,13 @@ JSON 응답:
         improvements = []
         
         # 1단계에서 강점/개선점 수집
-        for area_name, area_data in rag_completeness.get("areas_evaluation", {}).items():
-            if isinstance(area_data, dict) and area_data.get("completion_rate", 0) > 0.7:
-                strengths.append(f"{area_data.get('area_name', area_name)} 영역 우수")
-            elif isinstance(area_data, dict) and area_data.get("completion_rate", 0) < 0.5:
-                improvements.append(f"{area_data.get('area_name', area_name)} 영역 보완 필요")
+        for area_key, area_data in rag_completeness.get("areas_evaluation", {}).items():
+            area_name = area_data.get('area_name', area_key)
+            completion_rate = area_data.get("completion_rate", 0)
+            if completion_rate > 0.7:
+                strengths.append(f"{area_name} 영역 우수 ({completion_rate:.1%})")
+            elif completion_rate < 0.5:
+                improvements.append(f"{area_name} 영역 보완 필요 ({completion_rate:.1%})")
         
         # 2단계에서 강점/개선점 추가
         strengths.extend(quality_assessment.get("quality_strengths", []))
@@ -434,9 +456,346 @@ JSON 응답:
             "feedback": comprehensive_result["detailed_feedback"],
             "messages": state["messages"] + [HumanMessage(content=f"3단계: 종합 평가 완료 - {final_score:.1f}점 ({grade})")]
         }
+
+    # ================================
+    # 4. 핵심 평가 로직
+    # ================================
     
+    async def _comprehensive_evaluation(self, session_id: str, session: Dict) -> Dict:
+        """종합적인 세션 평가 수행 (SER + LangGraph 통합)"""
+        print(f"🔍 [{session_id}] 종합 평가 시작...")
+        
+        # LangGraph 기반 텍스트 평가 (직접 워크플로우 실행)
+        langgraph_analysis = None
+        if self.llm and self.workflow:
+            try:
+                # 새로운 conversation_entries를 conversation_log 형식으로 변환
+                conversation_log = []
+                for entry in session.get("conversation_entries", []):
+                    conversation_log.append({
+                        "role": entry["role"],
+                        "content": entry["text"],
+                        "timestamp": entry["timestamp"],
+                        "emotion": entry.get("emotion")
+                    })
+                
+                if conversation_log:  # 대화 데이터가 있는 경우에만 평가
+                    # LangGraph 워크플로우 직접 실행
+                    initial_state = CPXEvaluationState(
+                        user_id=session["user_id"],
+                        scenario_id=session["scenario_id"],
+                        conversation_log=conversation_log,
+                        completeness_assessment=None,
+                        quality_evaluation=None,
+                        comprehensive_evaluation=None,
+                        final_scores=None,
+                        feedback=None,
+                        evaluation_metadata=None,
+                        messages=[]
+                    )
+                    
+                    print(f"🚀 [{session_id}] LangGraph 워크플로우 시작")
+                    final_state = self.workflow.invoke(initial_state)
+                    
+                    # LangGraph 분석 결과 구성
+                    student_questions = [msg for msg in conversation_log if msg.get("role") == "doctor"]
+                    conversation_summary = {
+                        "total_questions": len(student_questions),
+                        "duration_minutes": (session["end_time"] - session["start_time"]).total_seconds() / 60
+                    }
+                    
+                    langgraph_analysis = {
+                        "evaluation_metadata": final_state.get("evaluation_metadata", {}),
+                        "scores": final_state.get("final_scores", {}),
+                        "feedback": final_state.get("feedback", {}),
+                        "conversation_summary": conversation_summary,
+                        "detailed_analysis": {
+                            "completeness": final_state.get("completeness_assessment", {}),
+                            "quality": final_state.get("quality_evaluation", {}),
+                            "comprehensive": final_state.get("comprehensive_evaluation", {})
+                        },
+                        "evaluation_method": "3단계 의학적 분석",
+                        "system_info": {
+                            "version": "v2.0",
+                            "evaluation_steps": 3
+                        }
+                    }
+                    print(f"✅ [{session_id}] LangGraph 텍스트 평가 완료")
+                else:
+                    print(f"⚠️ [{session_id}] 대화 데이터가 없어 LangGraph 평가를 건너뜁니다")
+                
+            except Exception as e:
+                print(f"❌ [{session_id}] LangGraph 텍스트 평가 실패: {e}")
+                langgraph_analysis = {"error": str(e)}
+        
+        # 종합 결과 구성
+        evaluation_result = {
+            "session_id": session_id,
+            "user_id": session["user_id"],
+            "scenario_id": session["scenario_id"],
+            "start_time": session["start_time"].isoformat(),
+            "end_time": session["end_time"].isoformat(),
+            "duration_minutes": (session["end_time"] - session["start_time"]).total_seconds() / 60,
+            
+            # 상세 분석 결과
+            "langgraph_text_analysis": langgraph_analysis,  # LangGraph 기반 텍스트 평가 결과
+            
+            # 실시간 대화 데이터 (감정 분석 포함)
+            "conversation_entries": [
+                {
+                    "timestamp": entry["timestamp"],
+                    "text": entry["text"],
+                    "role": entry["role"],
+                    "emotion": entry.get("emotion")
+                }
+                for entry in session.get("conversation_entries", [])
+            ]
+        }
+        
+        # 평가 결과를 JSON 파일로 저장
+        try:
+            timestamp = int(time.time())
+            filename = f"evaluation_{session_id}_{timestamp}.json"
+            file_path = self.evaluation_dir / filename
+            
+            with open(file_path, 'w', encoding='utf-8') as f:
+                json.dump(evaluation_result, f, ensure_ascii=False, indent=2, default=str)
+            
+            print(f"💾 [{session_id}] 평가 결과 저장 완료: {filename}")
+        except Exception as e:
+            print(f"❌ [{session_id}] 평가 결과 파일 저장 실패: {e}")
+        
+        print(f"✅ [{session_id}] 종합 평가 완료")
+        return evaluation_result
+
+    def _evaluate_area_simple(self, conversation_text: str, area_name: str, structured_sections: dict) -> dict:
+        """단일 단계 RAG 가이드라인 비교 평가 - GPT-4o 통합 평가"""
+        
+        # 가이드라인 텍스트 구성
+        detailed_guideline_text = ""
+        for section_name, section_data in structured_sections.items():
+            required_items = section_data.get('required_questions', []) + section_data.get('required_actions', [])
+            if required_items:
+                detailed_guideline_text += f"\n【{section_name}】\n"
+                detailed_guideline_text += "이 항목에서 확인해야 할 구체적 내용들:\n"
+                for item in required_items:
+                    detailed_guideline_text += f"  • {item}\n"
+                detailed_guideline_text += "\n"
+        
+        print(f"[통합 평가] {area_name} 영역 평가 시작...")
+        
+        prompt = f"""{area_name} 영역 평가
+
+전체 대화:
+{conversation_text}
+
+평가할 항목들:
+{detailed_guideline_text}
+
+**평가 방법**:
+1. 먼저 전체 대화에서 {area_name} 영역에 해당하는 부분을 파악하세요
+2. 해당 영역의 대화 내용만을 기준으로 각 항목을 평가하세요
+3. 다른 영역의 발언은 사용하지 마세요
+
+**영역 파악 가이드**:
+**일반적 순서**: 병력청취(초반) → 신체진찰(중반) → 환자교육(후반)
+
+**영역별 특징**:
+- **병력청취**: 정보 수집 목적
+  * 특징: 질문형 발언, "언제부터", "어떻게", "있으세요" 등
+  * 위치: 대화 초반~중반 (진찰 시작 전)
+  * 목적: 증상, 병력, 가족력 등 정보 탐색
+
+- **신체진찰**: 검사 수행 목적
+  * 특징: "진찰하겠습니다", "검사하겠습니다" 등 행위형 발언
+  * 위치: 병력청취 후 명시적 진찰 구간
+  * 목적: 물리적 검사 실시
+
+- **환자교육**: 정보 전달 목적
+  * 특징: "가능성", "때문에", "입니다" 등 설명형 발언
+  * 위치: 신체진찰 후~대화 종료
+  * 목적: 진단 설명, 치료 계획 안내
+
+**평가 규칙**:
+- {area_name} 영역 발언만 evidence로 사용
+- 대화 원문을 정확히 복사 (변경 금지)
+- 관련 내용이 다뤄졌으면 completed: true
+
+JSON 응답:
+{{
+{', '.join([f'    "{section_name}": {{"completed": true/false, "evidence": []}}' for section_name in structured_sections.keys()])}
+}}"""
+        
+        result = self._process_evaluation_response(prompt, area_name, structured_sections, stage="통합")
+        
+        print(f"[검증] evidence 실제 존재 여부 확인...")
+        print(f"[검증] 대화 텍스트 샘플: {conversation_text[:200]}...")
+        # evidence 검증 단계 추가
+        verified_result = self._verify_evidence_exists(conversation_text, result)
+        
+        return verified_result
+        
+
+
+    # ================================
+    # 5. 유틸리티 및 헬퍼 메서드들
+    # ================================
+    
+    def _get_scenario_category(self, scenario_id: str) -> Optional[str]:
+        """시나리오 파일에서 카테고리 정보 로드"""
+        try:
+            scenario_path = Path(f"scenarios/neurology_dementia_case.json")  # 현재는 하나의 시나리오만
+            if not scenario_path.exists():
+                return None
+            
+            with open(scenario_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                return data.get("scenario_info", {}).get("category")
+        except Exception as e:
+            print(f"❌ 시나리오 카테고리 로드 실패: {e}")
+            return None
+
+    def _parse_structured_sections(self, document) -> dict:
+        """문서에서 구조화된 섹션 파싱 - RAG 가이드라인 JSON 형식 처리"""
+        structured_sections = {}
+        
+        # 문서를 문자열로 변환
+        if hasattr(document, 'page_content'):
+            document_text = document.page_content
+        elif isinstance(document, dict):
+            document_text = document.get('content', '') or document.get('page_content', '') or str(document)
+        else:
+            document_text = str(document)
+        
+        # 섹션 패턴: 【섹션명】
+        section_pattern = re.compile(r'【([^】]+)】')
+        # 항목 패턴: • 또는 - 로 시작하는 줄
+        bullet_pattern = re.compile(r'^\s*[•\-\*]\s+(.+)$', re.MULTILINE)
+        
+        sections = section_pattern.split(document_text)
+        
+        for i in range(1, len(sections), 2):
+            if i + 1 < len(sections):
+                section_name = sections[i].strip()
+                section_content = sections[i + 1]
+                
+                # 섹션 내용에서 필수 항목 추출
+                required_items = bullet_pattern.findall(section_content)
+                if required_items:
+                    # 각 섹션을 딕셔너리 형태로 저장 (required_questions 키 사용)
+                    structured_sections[section_name] = {
+                        'required_questions': required_items,
+                        'required_actions': []  # 기본값
+                    }
+        
+        return structured_sections
+
+    def _build_conversation_text(self, conversation_log: List[Dict]) -> str:
+        """대화 로그를 텍스트로 변환"""
+        conversation_parts = []
+        for msg in conversation_log:
+            speaker = "의사" if msg.get("role") == "doctor" else "환자"
+            content = msg.get("content", "")
+            conversation_parts.append(f"{speaker}: {content}")
+        return "\n".join(conversation_parts)
+
+    def _process_evaluation_response(self, prompt: str, area_name: str, structured_sections: dict, stage: str = "") -> dict:
+        """평가 응답 처리 공통 함수"""
+        try:
+            messages = [{"role": "user", "content": prompt}]
+            response = self.llm.invoke(messages)
+            result_text = response.content
+            
+            print(f"[{stage}] LLM 응답 원문:\n{result_text[:300]}...")
+            
+            # 개선된 JSON 추출 및 파싱
+            # 1. 코드 블록 내 JSON 찾기 시도
+            code_block_match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', result_text, re.DOTALL)
+            if code_block_match:
+                json_str = code_block_match.group(1)
+            else:
+                # 2. 일반 JSON 패턴 찾기
+                json_match = re.search(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', result_text, re.DOTALL)
+                if json_match:
+                    json_str = json_match.group()
+                else:
+                    error_msg = f"[{stage}] JSON 형식을 찾을 수 없습니다."
+                    print(error_msg)
+                    raise ValueError(error_msg)
+            
+            # JSON 파싱 시도
+            try:
+                result = json.loads(json_str)
+                print(f"[{stage}] JSON 파싱 성공: {len(result)}개 항목")
+            except json.JSONDecodeError as json_error:
+                error_msg = f"[{stage}] JSON 파싱 실패: {json_error}"
+                print(error_msg)
+                raise ValueError(error_msg)
+            
+            # 결과 변환 및 검증
+            guideline_evaluations = []
+            for section_name in structured_sections.keys():
+                section_result = result.get(section_name, {})
+                
+                # 데이터 타입 검증 및 보정
+                found_value = section_result.get("completed", False) or section_result.get("found", False)
+                if isinstance(found_value, str):
+                    found_value = found_value.lower() in ['true', 'yes', '1', 'found', 'completed']
+                elif not isinstance(found_value, bool):
+                    found_value = False
+                
+                evidence_value = section_result.get("evidence", [])
+                if not isinstance(evidence_value, list):
+                    # 문자열인 경우 배열로 변환
+                    if isinstance(evidence_value, str) and evidence_value:
+                        evidence_value = [evidence_value]
+                    else:
+                        evidence_value = []
+                
+                # completed가 false인 경우 required_action 추가
+                required_action = []
+                if not found_value:
+                    # RAG 결과에서 해당 항목의 required_questions나 required_actions 가져오기
+                    for area_name_key, area_data in structured_sections.items():
+                        if area_name_key == section_name:
+                            # required_questions가 있으면 추가
+                            if "required_questions" in area_data:
+                                required_action.extend(area_data["required_questions"])
+                            # required_actions가 있으면 추가  
+                            if "required_actions" in area_data:
+                                required_action.extend(area_data["required_actions"])
+                            break
+
+                guideline_evaluations.append({
+                    "guideline_item": section_name,
+                    "completed": found_value,
+                    "evidence": evidence_value,
+                    "required_action": required_action if not found_value else []
+                })
+            
+            # 통계 계산
+            total_guidelines = len(guideline_evaluations)
+            completed_guidelines = sum(1 for item in guideline_evaluations if item["completed"])
+            completion_rate = completed_guidelines / total_guidelines if total_guidelines > 0 else 0
+            
+            print(f"[{stage}] 평가 완료: {completed_guidelines}/{total_guidelines} ({completion_rate:.1%})")
+            
+            return {
+                "area_name": area_name,
+                "total_guidelines": total_guidelines,
+                "completed_guidelines": completed_guidelines,
+                "completion_rate": completion_rate,
+                "guideline_evaluations": guideline_evaluations
+            }
+                
+        except Exception as e:
+            error_msg = f"[{stage}] 평가 실패: {e}"
+            print(error_msg)
+            logger.error(f"Traceback: {e}", exc_info=True)
+            raise RuntimeError(error_msg)
+
     def _verify_evidence_exists(self, conversation_text: str, evaluation_result: dict) -> dict:
-        """2단계: evidence array의 각 항목이 실제 대화에 존재하는지 검증"""
+        """evidence array의 각 항목이 실제 대화에 존재하는지 검증"""
         
         verified_evaluations = []
         
@@ -501,532 +860,6 @@ JSON 응답:
         print(f"[검증 완료] {completed_guidelines}/{total_guidelines} ({completion_rate:.1%})")
         
         return verified_result
-    
-
-    
-    def _process_evaluation_response(self, prompt: str, area_name: str, structured_sections: dict, stage: str = "") -> dict:
-        """평가 응답 처리 공통 함수"""
-        try:
-            messages = [{"role": "user", "content": prompt}]
-            response = self.llm.invoke(messages)
-            result_text = response.content
-            
-            print(f"[{stage}] LLM 응답 원문:\n{result_text[:300]}...")
-            
-            # 개선된 JSON 추출 및 파싱
-            import re
-            
-            # 1. 코드 블록 내 JSON 찾기 시도
-            code_block_match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', result_text, re.DOTALL)
-            if code_block_match:
-                json_str = code_block_match.group(1)
-            else:
-                # 2. 일반 JSON 패턴 찾기
-                json_match = re.search(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', result_text, re.DOTALL)
-                if json_match:
-                    json_str = json_match.group()
-                else:
-                    print(f"[{stage}] JSON 형식을 찾을 수 없습니다.")
-                    return self._create_empty_evaluation_result(area_name, structured_sections)
-            
-            # JSON 파싱 시도
-            try:
-                result = json.loads(json_str)
-                print(f"[{stage}] JSON 파싱 성공: {len(result)}개 항목")
-            except json.JSONDecodeError as json_error:
-                print(f"[{stage}] JSON 파싱 실패: {json_error}")
-                return self._create_empty_evaluation_result(area_name, structured_sections)
-            
-            # 결과 변환 및 검증
-            guideline_evaluations = []
-            for section_name in structured_sections.keys():
-                section_result = result.get(section_name, {})
-                
-                # 데이터 타입 검증 및 보정
-                found_value = section_result.get("completed", False) or section_result.get("found", False)
-                if isinstance(found_value, str):
-                    found_value = found_value.lower() in ['true', 'yes', '1', 'found', 'completed']
-                elif not isinstance(found_value, bool):
-                    found_value = False
-                
-                evidence_value = section_result.get("evidence", [])
-                if not isinstance(evidence_value, list):
-                    # 문자열인 경우 배열로 변환
-                    if isinstance(evidence_value, str) and evidence_value:
-                        evidence_value = [evidence_value]
-                    else:
-                        evidence_value = []
-                
-                # completed가 false인 경우 required_action 추가
-                required_action = []
-                if not found_value:
-                    # RAG 결과에서 해당 항목의 required_questions나 required_actions 가져오기
-                    for area_name, area_data in structured_sections.items():
-                        if area_name == section_name:
-                            # required_questions가 있으면 추가
-                            if "required_questions" in area_data:
-                                required_action.extend(area_data["required_questions"])
-                            # required_actions가 있으면 추가  
-                            if "required_actions" in area_data:
-                                required_action.extend(area_data["required_actions"])
-                            break
-
-                guideline_evaluations.append({
-                    "guideline_item": section_name,
-                    "completed": found_value,
-                    "evidence": evidence_value,
-                    "required_action": required_action if not found_value else []
-                })
-            
-            # 통계 계산
-            total_guidelines = len(guideline_evaluations)
-            completed_guidelines = sum(1 for item in guideline_evaluations if item["completed"])
-            completion_rate = completed_guidelines / total_guidelines if total_guidelines > 0 else 0
-            
-            print(f"[{stage}] 평가 완료: {completed_guidelines}/{total_guidelines} ({completion_rate:.1%})")
-            
-            return {
-                "area_name": area_name,
-                "total_guidelines": total_guidelines,
-                "completed_guidelines": completed_guidelines,
-                "completion_rate": completion_rate,
-                "guideline_evaluations": guideline_evaluations
-            }
-                
-        except Exception as e:
-            print(f"[{stage}] 평가 실패: {e}")
-            import traceback
-            traceback.print_exc()
-            return self._create_empty_evaluation_result(area_name, structured_sections)
-    
-
-    
-    def _create_empty_evaluation_result(self, area_name: str, structured_sections: dict) -> dict:
-        """빈 평가 결과 생성 (에러 처리용)"""
-        guideline_evaluations = []
-        for section_name in structured_sections.keys():
-            guideline_evaluations.append({
-                "guideline_item": section_name,
-                "completed": False,
-                "evidence": ""
-            })
-        
-        return {
-            "area_name": area_name,
-            "total_guidelines": len(guideline_evaluations),
-            "completed_guidelines": 0,
-            "completion_rate": 0.0,
-            "guideline_evaluations": guideline_evaluations
-        }
-
-
-
-    async def start_evaluation_session(self, user_id: str, scenario_id: str, result_id: Optional[int] = None) -> str:
-        """평가 세션 시작"""
-        session_id = f"{user_id}_{scenario_id}_{int(datetime.now().timestamp())}"
-        
-        self.session_data[session_id] = {
-            "user_id": user_id,
-            "scenario_id": scenario_id,
-            "result_id": result_id,  # CPX result_id 저장
-            "start_time": datetime.now(),
-            "conversation_entries": [],  # 실시간 대화 데이터
-            # "audio_files": [],  # 임시 저장된 wav 파일 경로들
-            "status": "active"
-        }
-        
-        return session_id
-
-    async def add_conversation_entry(self, session_id: str, audio_file_path: str, 
-                                   text: str, speaker_role: str, emotion_analysis: Optional[Dict] = None) -> Dict:
-        """실시간 대화 엔트리 추가 (SER 결과는 queue에서 전달받음)"""
-        if session_id not in self.session_data:
-            return {"error": "세션을 찾을 수 없습니다"}
-        
-        try:
-            timestamp = datetime.now()
-            
-            # SER 결과 로깅 (queue에서 전달받은 경우)
-            if emotion_analysis:
-                print(f"🎭 [{session_id}] 감정 분석 결과 수신: {emotion_analysis['predicted_emotion']} ({emotion_analysis['confidence']:.2f})")
-            
-            # 대화 엔트리 생성
-            conversation_entry = {
-                "timestamp": timestamp.isoformat(),
-                "text": text,
-                "emotion": emotion_analysis,
-                "speaker_role": speaker_role,  # "student" (의사) or "patient" (환자)
-                "audio_file_path": audio_file_path
-            }
-            
-            # 세션 데이터에 추가
-            session = self.session_data[session_id]
-            session["conversation_entries"].append(conversation_entry)
-            if "audio_files" not in session:
-                session["audio_files"] = []
-            session["audio_files"].append(audio_file_path)
-            
-            print(f"📝 [{session_id}] 대화 엔트리 추가: {speaker_role} - {text[:50]}...")
-            
-            # 평가 완료 후 임시 WAV 파일들 삭제
-            try:
-                await self._cleanup_audio_files(audio_file_path)
-            except Exception as e:
-                print(f"❌ [{audio_file_path}] 임시 WAV 파일 삭제 실패: {e}")
-            
-            return {
-                "success": True,
-                "entry": conversation_entry,
-                "total_entries": len(session["conversation_entries"])
-            }
-            
-        except Exception as e:
-            print(f"❌ [{session_id}] 대화 엔트리 추가 실패: {e}")
-            return {"error": str(e)}
-
-    async def end_evaluation_session(self, session_id: str) -> Dict:
-        """평가 세션 종료 및 종합 평가 실행"""
-        if session_id not in self.session_data:
-            return {"error": "세션을 찾을 수 없습니다"}
-        
-        session = self.session_data[session_id]
-        session["end_time"] = datetime.now()
-        session["status"] = "completed"
-        
-        # 종합 평가 실행
-        evaluation_result = await self._comprehensive_evaluation(session_id, session)
-        
-        # CPX 데이터베이스 업데이트
-        await self._update_cpx_database_after_evaluation(session_id, evaluation_result)
-        
-        return evaluation_result
-
-    def get_session_summary(self, user_id: str) -> list:
-        """사용자의 세션 요약"""
-        return [
-            {
-                "session_id": sid,
-                "scenario_id": data["scenario_id"],
-                "date": data["start_time"].strftime("%Y-%m-%d %H:%M"),
-                "status": data["status"]
-            }
-            for sid, data in self.session_data.items()
-            if data["user_id"] == user_id
-        ]
-
-    async def _comprehensive_evaluation(self, session_id: str, session: Dict) -> Dict:
-        """종합적인 세션 평가 수행 (SER + LangGraph 통합)"""
-        print(f"🔍 [{session_id}] 종합 평가 시작...")
-        
-        # LangGraph 기반 텍스트 평가 (새로운 대화 데이터 사용)
-        langgraph_analysis = None
-        if self.llm and self.workflow:
-            try:
-                # 새로운 conversation_entries를 conversation_log 형식으로 변환
-                conversation_log = []
-                for entry in session.get("conversation_entries", []):
-                    conversation_log.append({
-                        "role": entry["speaker_role"],
-                        "content": entry["text"],
-                        "timestamp": entry["timestamp"],
-                        "emotion": entry.get("emotion")
-                    })
-                
-                if conversation_log:  # 대화 데이터가 있는 경우에만 평가
-                    langgraph_analysis = await self.evaluate_conversation_with_langgraph(
-                        session["user_id"], 
-                        session["scenario_id"], 
-                        conversation_log
-                    )
-                    print(f"✅ [{session_id}] LangGraph 텍스트 평가 완료")
-                else:
-                    print(f"⚠️ [{session_id}] 대화 데이터가 없어 LangGraph 평가를 건너뜁니다")
-                
-            except Exception as e:
-                print(f"❌ [{session_id}] LangGraph 텍스트 평가 실패: {e}")
-                langgraph_analysis = {"error": str(e)}
-        
-        # 종합 결과 구성
-        evaluation_result = {
-            "session_id": session_id,
-            "user_id": session["user_id"],
-            "scenario_id": session["scenario_id"],
-            "start_time": session["start_time"].isoformat(),
-            "end_time": session["end_time"].isoformat(),
-            "duration_minutes": (session["end_time"] - session["start_time"]).total_seconds() / 60,
-            
-            # 상세 분석 결과
-            "langgraph_text_analysis": langgraph_analysis,  # LangGraph 기반 텍스트 평가 결과
-            
-            # 실시간 대화 데이터 (감정 분석 포함)
-            "conversation_entries": [
-                {
-                    "timestamp": entry["timestamp"],
-                    "text": entry["text"],
-                    "speaker_role": entry["speaker_role"],
-                    "emotion": entry.get("emotion"),
-                    "audio_file": entry["audio_file_path"]
-                }
-                for entry in session.get("conversation_entries", [])
-            ]
-        }
-        
-        print(f"✅ [{session_id}] 종합 평가 완료")
-        return evaluation_result
-
-    async def _save_evaluation_result(self, session_id: str, result: Dict):
-        """평가 결과를 파일로 저장"""
-        try:
-            # JSON 파일로 저장
-            json_path = self.evaluation_dir / f"{session_id}_evaluation.json"
-            
-            async with aiofiles.open(json_path, 'w', encoding='utf-8') as f:
-                await f.write(json.dumps(result, ensure_ascii=False, indent=2))
-            
-            print(f"💾 [{session_id}] 평가 결과 저장 완료: {json_path}")
-            
-        except Exception as e:
-            print(f"❌ [{session_id}] 평가 결과 저장 실패: {e}")
-
-    async def get_evaluation_result(self, session_id: str) -> Dict:
-        """저장된 평가 결과 조회"""
-        json_path = self.evaluation_dir / f"{session_id}_evaluation.json"
-        
-        if not json_path.exists():
-            return {"error": "평가 결과를 찾을 수 없습니다"}
-        
-        try:
-            async with aiofiles.open(json_path, 'r', encoding='utf-8') as f:
-                content = await f.read()
-                return json.loads(content)
-        except Exception as e:
-            return {"error": f"평가 결과 로드 실패: {e}"}
-
-    # LangGraph 기반 텍스트 평가 기능
-    
-    def _initialize_langgraph_components(self):
-        """LangGraph 컴포넌트들 초기화"""
-        try:
-            # OpenAI API 설정
-            api_key = os.getenv("OPENAI_API_KEY")
-            if api_key:
-                self.llm = ChatOpenAI(
-                    openai_api_key=api_key,
-                    model_name="gpt-4o",
-                    temperature=0.1,
-                    max_tokens=4000
-                )
-                
-                # 워크플로우 생성
-                self.workflow = self._create_evaluation_workflow()
-                print("✅ LangGraph 텍스트 평가 컴포넌트 초기화 완료")
-            else:
-                print("⚠️ OPENAI_API_KEY가 설정되지 않아 텍스트 평가 기능을 사용할 수 없습니다")
-                
-        except Exception as e:
-            print(f"❌ LangGraph 컴포넌트 초기화 실패: {e}")
-            self.llm = None
-            self.workflow = None
-
-
-
-    async def evaluate_conversation(self, user_id: str, scenario_id: str, conversation_log: List[Dict]) -> Dict:
-        """LangGraph 워크플로우를 사용한 CPX 평가 실행"""
-        # 초기 상태 구성 (Multi-Step 전용)
-        initial_state = CPXEvaluationState(
-            user_id=user_id,
-            scenario_id=scenario_id,
-            conversation_log=conversation_log,
-            medical_context_analysis=None,
-            question_intent_analysis=None,
-            completeness_assessment=None,
-            quality_evaluation=None,
-            appropriateness_validation=None,
-            comprehensive_evaluation=None,
-            final_scores=None,
-            feedback=None,
-            evaluation_metadata=None,
-            messages=[]
-        )
-        
-        try:
-            # 워크플로우 실행
-            print(f"🚀 [{user_id}] CPX 평가 워크플로우 시작")
-            final_state = self.workflow.invoke(initial_state)
-            
-            # 간단한 대화 요약 정보 생성
-            student_questions = [msg for msg in conversation_log if msg.get("role") == "student"]
-            conversation_summary = {
-                "total_questions": len(student_questions),
-                "duration_minutes": len(conversation_log) * 0.5
-            }
-            
-            # 최종 결과 구성
-            result = {
-                "evaluation_metadata": final_state.get("evaluation_metadata", {}),
-                "scores": final_state.get("final_scores", {}),
-                "feedback": final_state.get("feedback", {}),
-                "conversation_summary": conversation_summary,
-                "detailed_analysis": {
-                    "medical_context": final_state.get("medical_context_analysis", {}),
-                    "question_intent": final_state.get("question_intent_analysis", {}),
-                    "completeness": final_state.get("completeness_assessment", {}),
-                    "quality": final_state.get("quality_evaluation", {}),
-                    "appropriateness": final_state.get("appropriateness_validation", {}),
-                    "comprehensive": final_state.get("comprehensive_evaluation", {})
-                },
-                "evaluation_method": "6단계 의학적 분석",
-                "system_info": {
-                    "version": "v2.0",
-                    "evaluation_steps": 6
-                }
-            }
-            
-            print(f"🎉 [{user_id}] CPX 평가 워크플로우 완료")
-            
-            return result
-            
-        except Exception as e:
-            print(f"❌ [{user_id}] 평가 워크플로우 오류: {e}")
-            return {
-                "error": str(e),
-                "user_id": user_id,
-                "scenario_id": scenario_id,
-                "evaluation_date": datetime.now().isoformat()
-            }
-
-    def _create_evaluation_workflow(self):
-        """CPX 평가 워크플로우 생성 (3단계)"""
-        workflow = StateGraph(CPXEvaluationState)
-
-        workflow.add_node("initialize", self._initialize_evaluation)
-        workflow.add_node("step1_rag_completeness", self._evaluate_rag_completeness)
-        workflow.add_node("step2_quality_assessment", self._evaluate_quality_assessment)
-        workflow.add_node("step3_comprehensive_results", self._generate_comprehensive_results)
-
-        workflow.set_entry_point("initialize")
-        workflow.add_edge("initialize", "step1_rag_completeness")
-        workflow.add_edge("step1_rag_completeness", "step2_quality_assessment")
-        workflow.add_edge("step2_quality_assessment", "step3_comprehensive_results")
-        workflow.add_edge("step3_comprehensive_results", END)
-
-        return workflow.compile()
-
-    def _initialize_evaluation(self, state: CPXEvaluationState) -> CPXEvaluationState:
-        print(f"🎯 [{state['user_id']}] CPX 평가 초기화 - 시나리오: {state['scenario_id']}")
-        
-        metadata = {
-            "user_id": state["user_id"],
-            "scenario_id": state["scenario_id"],
-            "evaluation_date": datetime.now().isoformat(),
-            "conversation_duration_minutes": len(state["conversation_log"]) * 0.5,
-            "voice_recording_path": "s3로 저장",
-            "conversation_transcript": json.dumps(state["conversation_log"], ensure_ascii=False)
-        }
-        
-        return {
-            **state,
-            "evaluation_metadata": metadata,
-            "messages": [HumanMessage(content="CPX 평가를 시작합니다.")]
-        }
-
-    def _evaluate_rag_completeness(self, state: CPXEvaluationState) -> CPXEvaluationState:
-        """1단계: RAG 기반 완성도 평가 (병력청취, 신체진찰, 환자교육)"""
-        print(f"📋 [{state['user_id']}] 1단계: RAG 기반 완성도 평가 시작")
-        
-        conversation_text = self._build_conversation_text(state["conversation_log"])
-        scenario_id = state["scenario_id"]
-        
-        # 시나리오에서 카테고리 정보 로드
-        scenario_category = self._get_scenario_category(scenario_id)
-        if not scenario_category:
-            raise ValueError(f"시나리오 '{scenario_id}'의 카테고리를 찾을 수 없습니다.")
-            
-        rag_data = {
-            "scenario_id": scenario_id,
-            "category": scenario_category
-        }
-        
-        # 3개 영역별 청크 기반 평가
-        areas_evaluation = {}
-        
-        for area_key, area_name in [("history_taking", "병력 청취"), ("physical_examination", "신체 진찰"), ("patient_education", "환자 교육")]:
-            # RAG에서 가이드라인 가져오기
-            criteria_data = self.guideline_retriever.get_evaluation_criteria(scenario_category, area_name)
-            documents = criteria_data.get("documents", [])
-            
-            if not documents or not documents[0]:
-                raise ValueError(f"❌ {area_name} 가이드라인을 찾을 수 없습니다.")
-            
-            # 구조화된 섹션 파싱
-            structured_sections = self._parse_structured_sections(documents[0])
-            
-            # 간단한 RAG 가이드라인 비교 평가 실행
-            areas_evaluation[area_key] = self.evaluate_area_simple(
-                conversation_text, area_name, structured_sections
-            )
-        
-        # 전체 완성도 점수 계산
-        total_guidelines = sum(area.get("total_guidelines", 0) for area in areas_evaluation.values())
-        completed_guidelines = sum(area.get("completed_guidelines", 0) for area in areas_evaluation.values())
-        overall_completeness = completed_guidelines / total_guidelines if total_guidelines > 0 else 0
-        
-        # 전체 완료/누락 항목 수집 (새로운 JSON 형식 대응)
-        all_completed_items = []
-        all_missing_items = []
-        for area_data in areas_evaluation.values():
-            # 기존 형식 지원 (하위 호환성)
-            if "completed_items" in area_data:
-                all_completed_items.extend(area_data.get("completed_items", []))
-            if "missing_items" in area_data:
-                all_missing_items.extend(area_data.get("missing_items", []))
-            
-            # 새로운 section_evaluations 형식 지원
-            section_evals = area_data.get("section_evaluations", [])
-            for section in section_evals:
-                if section.get("status") == "completed":
-                    covered_desc = section.get("how_covered", "")
-                    if covered_desc:
-                        all_completed_items.append(f"{section.get('section_name', '')}: {covered_desc}")
-                elif section.get("status") in ["partial", "missing"]:
-                    missing_aspects = section.get("missing_aspects", [])
-                    if missing_aspects:
-                        all_missing_items.extend([f"{section.get('section_name', '')}: {aspect}" for aspect in missing_aspects])
-                    elif section.get("status") == "missing":
-                        all_missing_items.append(f"{section.get('section_name', '')}: 전체 누락")
-        
-        rag_completeness_result = {
-            "category": scenario_category or scenario_id,
-            "overall_completeness": round(overall_completeness, 2),
-            "areas_evaluation": areas_evaluation,
-            "total_completed_items": len(all_completed_items),
-            "total_missing_items": len(all_missing_items),
-            "completed_items": all_completed_items,
-            "missing_items": all_missing_items,
-            "evaluation_method": "rag_three_areas"
-        }
-        
-        print(f"✅ [{state['user_id']}] 1단계: RAG 기반 완성도 평가 완료 - 완성도: {overall_completeness:.2%}")
-        
-        return {
-            **state,
-            "completeness_assessment": rag_completeness_result,
-            "messages": state["messages"] + [HumanMessage(content=f"1단계: RAG 기반 완성도 평가 완료 - {overall_completeness:.1%}")]
-        }
-
-    
-
-
-    def _build_conversation_text(self, conversation_log: List[Dict]) -> str:
-        """대화 로그를 텍스트로 변환"""
-        conversation_parts = []
-        for msg in conversation_log:
-            speaker = "의사" if msg.get("role") == "student" else "환자"
-            content = msg.get("content", "")
-            conversation_parts.append(f"{speaker}: {content}")
-        return "\n".join(conversation_parts)
-
-
 
     def _calculate_grade(self, score: float) -> str:
         """점수에 따른 등급 계산"""
@@ -1045,15 +878,26 @@ JSON 응답:
         else:
             return "F"
 
+    # ================================
+    # 6. 데이터베이스 및 파일 관리
+    # ================================
+    
     async def _update_cpx_database_after_evaluation(self, session_id: str, evaluation_result: dict):
         """평가 완료 후 CPX Details만 업데이트"""
         try:
             session = self.session_data[session_id]
-            result_id = session["result_id"]
+            result_id = session.get("result_id")
             user_id = session["user_id"]
             
+            if result_id is None:
+                print(f"❌ [{session_id}] result_id가 None입니다. CPX 결과 생성에 실패했을 가능성이 있습니다.")
+                print(f"❌ [{session_id}] 데이터베이스 업데이트를 건너뜁니다. JSON 파일만 저장됩니다.")
+                return
+            
             # CPX Details만 업데이트 (시스템 평가 데이터)
-            async for db in get_db():
+            db_gen = get_db()
+            db = await db_gen.__anext__()
+            try:
                 cpx_service = CpxService(db)
                 
                 await cpx_service.update_cpx_details(
@@ -1063,24 +907,12 @@ JSON 응답:
                 )
                 
                 print(f"✅ CPX Details 업데이트 완료: result_id={result_id}, session_id={session_id}")
-                break
+                
+            finally:
+                await db_gen.aclose()
                 
         except Exception as e:
             print(f"❌ CPX Details 업데이트 실패: {e}")
+            import traceback
+            traceback.print_exc()
 
-    async def _cleanup_audio_files(self, audio_file_path: str):
-        """평가 완료 후 임시 WAV 파일들만 삭제 (TTS 캐시 파일은 보존)"""
-
-        try:
-            file_path_obj = Path(audio_file_path)
-            # TTS 캐시 파일은 삭제하지 않음
-            if "cache/tts" in str(file_path_obj):
-                print(f"🔒 TTS 캐시 파일 보존: {audio_file_path}")
-                return
-                
-            if file_path_obj.exists() and file_path_obj.suffix == '.wav':
-                file_path_obj.unlink()  # WAV 파일만 삭제
-                print(f"🗑️ 임시 WAV 파일 삭제: {audio_file_path}")
-                    
-        except Exception as e:
-            print(f"❌ WAV 파일 삭제 실패 ({audio_file_path}): {e}")

@@ -6,13 +6,15 @@ import json
 import os
 from pathlib import Path
 from typing import Dict, List
-import torch
 from langchain_community.vectorstores import FAISS
-from langchain_community.embeddings import HuggingFaceEmbeddings
+from langchain_openai import OpenAIEmbeddings
 from langchain_core.documents import Document
+from dotenv import load_dotenv
 
-def load_device():
-    return "cuda" if torch.cuda.is_available() else "cpu"
+# 환경변수 로드
+load_dotenv()
+
+# OpenAI API 사용으로 device 함수 불필요
 
 def create_documents_from_guideline(guideline_path: str) -> List[Document]:
     """가이드라인 JSON 파일을 Document 객체들로 변환"""
@@ -87,15 +89,18 @@ def create_documents_from_guideline(guideline_path: str) -> List[Document]:
     
     return documents
 
-def index_guideline_to_faiss(guideline_path: str, index_path: str, model_name: str = "intfloat/multilingual-e5-large"):
+def index_guideline_to_faiss(guideline_path: str, index_path: str, model_name: str = "text-embedding-3-small"):
     """체크리스트를 FAISS 인덱스에 추가"""
     
-    device = load_device()
-    print(f"사용 중인 장치: {device}")
+    # OpenAI API 키 확인
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        raise ValueError("OPENAI_API_KEY가 설정되지 않았습니다. .env 파일을 확인하세요.")
     
-    # 임베딩 모델 초기화
-    embeddings = HuggingFaceEmbeddings(
-        model_name=model_name
+    # 임베딩 모델 초기화 - OpenAI API 사용
+    embeddings = OpenAIEmbeddings(
+        model=model_name,
+        openai_api_key=api_key
     )
     
     # 가이드라인을 문서로 변환
@@ -121,12 +126,17 @@ def index_guideline_to_faiss(guideline_path: str, index_path: str, model_name: s
     
     return vectorstore
 
-def search_guideline(index_path: str, query: str, k: int = 5, model_name: str = "intfloat/multilingual-e5-large"):
+def search_guideline(index_path: str, query: str, k: int = 5, model_name: str = "text-embedding-3-small"):
     """체크리스트에서 관련 내용 검색"""
     
-    device = load_device()
-    embeddings = HuggingFaceEmbeddings(
-        model_name=model_name
+    # OpenAI API 키 확인
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        raise ValueError("OPENAI_API_KEY가 설정되지 않았습니다.")
+    
+    embeddings = OpenAIEmbeddings(
+        model=model_name,
+        openai_api_key=api_key
     )
     
     # 인덱스 로드
