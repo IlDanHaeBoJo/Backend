@@ -3,19 +3,9 @@ from google.cloud import speech
 from core.config import settings, Base, engine # Base와 engine 임포트
 import core.models # 모델 정의를 로드하여 Base.metadata에 등록
 
-# SQLite 버전 업그레이드를 위해 pysqlite3를 sqlite3로 대체
-try:
-    import pysqlite3 as sqlite3
-    import sys
-    sys.modules['sqlite3'] = sqlite3
-    logging.getLogger(__name__).info("✅ pysqlite3를 사용하여 SQLite 버전 업그레이드")
-except ImportError:
-    import sqlite3
-    logging.getLogger(__name__).warning("⚠️  pysqlite3 없음, 기본 sqlite3 사용")
-
 from services.llm_service import LLMService
 from services.tts_service import TTSService
-from services.vector_service import VectorService
+from services.stt_service import STTService
 from services.evaluation_service import EvaluationService
 from services.ser_service import SERService
 
@@ -63,22 +53,11 @@ class ServiceManager:
             raise
     
     async def _initialize_speech_service(self):
-        """Google Cloud Speech API 초기화"""
-        logger.info("🎤 Google Cloud Speech API 초기화 중...")
-        
-        self.speech_client = speech.SpeechClient()
-        
-        # 한국어 실시간 인식 설정
-        self.speech_config = speech.RecognitionConfig(
-            encoding=speech.RecognitionConfig.AudioEncoding.LINEAR16,
-            sample_rate_hertz=settings.AUDIO_SAMPLE_RATE,
-            language_code="ko-KR",  # 한국어
-            model="latest_long",    # 긴 대화용 모델
-            enable_automatic_punctuation=True,  # 자동 문장부호
-            use_enhanced=True,      # 향상된 모델 사용
-        )
-        
-        logger.info("✅ Google Cloud Speech API 초기화 완료")
+        """Google Cloud Speech API 초기화 - STTService에서 처리됨"""
+        logger.info("🎤 Google Cloud Speech API 초기화는 STTService에서 처리됩니다")
+        # STTService에서 초기화하므로 여기서는 스킵
+        self.speech_client = None  # 호환성을 위해 유지
+        self.speech_config = None  # 호환성을 위해 유지
     
     async def _initialize_ai_services(self):
         """AI 서비스들 초기화"""
@@ -87,6 +66,11 @@ class ServiceManager:
         # LLM 서비스 초기화
         self.llm_service = LLMService()
         logger.info("✅ LLM 서비스 초기화 완료")
+        
+        # STT 서비스 초기화
+        self.stt_service = STTService()
+        await self.stt_service.initialize()
+        logger.info("✅ STT 서비스 초기화 완료")
         
         # TTS 서비스 초기화
         self.tts_service = TTSService()
@@ -99,37 +83,16 @@ class ServiceManager:
         # Evaluation 서비스 초기화 (SER 기능 제거됨)
         self.evaluation_service = EvaluationService()
         logger.info("✅ Evaluation 서비스 초기화 완료")
-
-        
-        # 벡터 서비스 초기화 (SQLite 이슈 처리)
-        try:
-            self.vector_service = VectorService()
-            logger.info("✅ Vector 서비스 초기화 완료")
-        except Exception as e:
-            logger.warning(f"⚠️  Vector 서비스 초기화 부분 실패, 기본 모드로 계속: {e}")
-            if "sqlite" in str(e).lower():
-                logger.info("💡 SQLite 버전 문제인 경우 'pip install pysqlite3-binary' 실행 후 재시작하세요")
-            # 기본 벡터 서비스 객체 생성 (검색 없이)
-            self.vector_service = type('VectorService', (), {
-                'vectorstore': None,
-                '_use_fallback_knowledge': True,
-                'search': self._fallback_search
-            })()
-            
-    async def _fallback_search(self, query: str, k: int = 3):
-        """fallback 검색 함수"""
-        return ["기본 CPX 케이스 - 환자는 증상에 대해 자연스럽게 응답합니다."]
     
     def get_health_status(self) -> dict:
         """서비스 상태 확인"""
         return {
             "status": "healthy" if self._initialized else "initializing",
-            "speech": self.speech_client is not None,
             "llm": self.llm_service is not None,
+            "stt": self.stt_service is not None,
             "tts": self.tts_service is not None,
             "ser": self.ser_service is not None,
             "evaluation": self.evaluation_service is not None,
-            "vector": self.vector_service is not None,
             "initialized": self._initialized
         }
     

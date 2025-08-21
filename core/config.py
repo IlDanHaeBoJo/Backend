@@ -50,13 +50,6 @@ class Settings:
     AUDIO_CHANNELS: int = 1
     AUDIO_SAMPLE_WIDTH: int = 2  # 16-bit
     
-    # 디렉토리 설정
-    TEMP_AUDIO_DIR: Path = Path("temp_audio")  # 루트 temp 디렉터리
-    RUN_ID: str = ""  # 서비스 실행 시각 구분용 (init에서 설정)
-    SESSION_AUDIO_DIR: Path = None  # TEMP_AUDIO_DIR/RUN_ID
-    STATIC_AUDIO_DIR: Path = Path("static/audio")
-    CACHE_DIR: Path = Path("cache")
-
     # PostgreSQL 설정
     DATABASE_URL: str = os.getenv("DATABASE_URL","")
 
@@ -77,13 +70,6 @@ class Settings:
     
     def __init__(self):
         """설정 초기화 및 검증"""
-        # 필수 디렉토리 생성
-        self.TEMP_AUDIO_DIR.mkdir(parents=True, exist_ok=True)
-        self.STATIC_AUDIO_DIR.mkdir(parents=True, exist_ok=True)
-        self.CACHE_DIR.mkdir(parents=True, exist_ok=True)
-        # 현재 프로세스 고유 식별자
-        self.RUN_ID = datetime.now().strftime("%Y%m%d_%H%M%S")
-        
         # 필수 API 키 검증
         if not self.OPENAI_API_KEY:
             raise ValueError("OPENAI_API_KEY가 설정되지 않았습니다.")
