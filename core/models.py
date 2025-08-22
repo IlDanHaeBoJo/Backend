@@ -18,6 +18,7 @@ class User(Base):
     notices = relationship("Notices", back_populates="author")
     cpx_results = relationship("CpxResults", back_populates="student")
     cpx_evaluations_as_evaluator = relationship("CpxEvaluations", back_populates="evaluator")
+    privacy_consents = relationship("PrivacyConsent", back_populates="user") # 추가
 
 class UserDetails(Base):
     __tablename__ = "user_details"
@@ -102,3 +103,28 @@ class CpxEvaluations(Base):
 
     cpx_result = relationship("CpxResults", back_populates="cpx_evaluation")
     evaluator = relationship("User", back_populates="cpx_evaluations_as_evaluator")
+
+# 개인정보 수집 동의 모델
+class PrivacyConsent(Base):
+    __tablename__ = "privacy_consents"
+
+    id = Column(Integer, primary_key=True, index=True, comment='개인정보 동의 기록 고유 식별자')
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, comment='동의한 사용자 ID')
+    terms_id = Column(Integer, ForeignKey("terms_and_conditions.id"), nullable=False, comment='동의한 약관 ID')
+    consent_date = Column(DateTime(timezone=True), server_default=func.now(), comment='동의한 날짜 및 시간')
+
+    user = relationship("User", back_populates="privacy_consents")
+    terms = relationship("TermsAndConditions", back_populates="consents")
+
+# 약관 및 정책 모델
+class TermsAndConditions(Base):
+    __tablename__ = "terms_and_conditions"
+
+    id = Column(Integer, primary_key=True, index=True, comment='약관 고유 식별자')
+    title = Column(String(255), nullable=False, comment='약관 제목 (예: 개인정보 처리방침, 서비스 이용약관)')
+    content = Column(Text, nullable=False, comment='약관 내용')
+    effective_date = Column(DateTime(timezone=True), nullable=False, comment='약관 발효일')
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), comment='약관 생성 시간')
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), comment='약관 마지막 업데이트 시간')
+
+    consents = relationship("PrivacyConsent", back_populates="terms")
