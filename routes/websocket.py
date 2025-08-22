@@ -400,6 +400,8 @@ async def websocket_endpoint(websocket: WebSocket, user_id: str):
         print(f"🎭 [{user_id}] 기본 시나리오({default_scenario_id}) 설정 및 평가 세션 시작: {eval_session_id}")
         
         # 시작 메시지 전송
+        scenario_info = service_manager.llm_service.get_user_scenario_info(user_id)
+        
         await websocket.send_text(json.dumps({
             # "type": "scenario_selection",
             # "message": f"🏥 CPX 시스템에 연결되었습니다! ({user_id})\n\n📋 시나리오를 선택해주세요:\n{scenario_options}\n\n번호를 입력하고 음성으로 '시작'이라고 말씀해주세요.",
@@ -408,6 +410,8 @@ async def websocket_endpoint(websocket: WebSocket, user_id: str):
             "type": "session_started",
             "message": f"🏥 CPX 시스템에 연결되었습니다! ({user_id})\n\n치매 환자 시나리오가 설정되었습니다.\n지금부터 환자에게 말을 걸어보세요.",
             "scenario_id": default_scenario_id,
+            "scenario_name": scenario_info.get("name") if scenario_info else "치매 환자 시나리오",
+            "patient_image_url": scenario_info.get("patient_image_url") if scenario_info else None,
             "avatar_action": "ready"
         }, ensure_ascii=False))
         

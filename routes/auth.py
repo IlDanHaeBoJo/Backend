@@ -261,3 +261,23 @@ async def verify_password_reset_code(
         )
 
     return {"message": "Verification successful. Temporary password sent to your email."}
+
+@router.get("/me", summary="현재 사용자 정보 가져오기", response_model=UserResponseSchema)
+async def read_users_me(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    user = await get_user_by_username(db, current_user.username)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="사용자를 찾을 수 없습니다."
+        )
+    return UserResponseSchema(
+        id=user.id,
+        username=user.username,
+        email=user.user_detail.email if user.user_detail else None,
+        name=user.user_detail.name if user.user_detail else None,
+        role=user.role,
+        student_id=user.user_detail.student_id if user.user_detail else None,
+        major=user.user_detail.major if user.user_detail else None
+    )

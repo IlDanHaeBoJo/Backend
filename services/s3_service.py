@@ -77,6 +77,30 @@ class S3Service:
         except Exception as e:
             logger.error(f"Presigned URL 생성 실패: {e}")
             return None
+
+    def generate_download_url(self, s3_key: str, expires_in: int = 3600) -> str:
+        """S3 파일 다운로드용 Presigned URL 생성"""
+        if not self.s3_client:
+            raise HTTPException(status_code=500, detail="S3 클라이언트가 초기화되지 않았습니다.")
+        
+        try:
+            logger.info(f"다운로드 Presigned URL 생성 시작 - S3 키: {s3_key}, 만료시간: {expires_in}초")
+            
+            url = self.s3_client.generate_presigned_url(
+                'get_object',
+                Params={
+                    'Bucket': self.bucket_name,
+                    'Key': s3_key
+                },
+                ExpiresIn=expires_in
+            )
+            
+            logger.info(f"다운로드 Presigned URL 생성 완료 - S3 키: {s3_key}, URL 길이: {len(url)}")
+            return url
+            
+        except Exception as e:
+            logger.error(f"다운로드 Presigned URL 생성 실패 - S3 키: {s3_key}, 오류: {e}")
+            raise HTTPException(status_code=500, detail=f"다운로드 URL 생성 중 오류가 발생했습니다: {str(e)}")
     
     def upload_file(
         self, 
@@ -320,6 +344,29 @@ class S3Service:
             # 오류 발생 시 원본 URL 반환
             logger.warning(f"S3 키 추출 실패 - URL: {s3_url}, 오류: {e}")
             return s3_url
+    
+    def list_objects(self, prefix: str = "") -> list:
+        """S3 버킷에서 특정 접두사로 시작하는 객체 목록 조회"""
+        if not self.s3_client:
+            logger.error("S3 클라이언트가 초기화되지 않았습니다.")
+            return []
+        
+        try:
+            logger.info(f"S3 객체 목록 조회 시작 - 접두사: {prefix}")
+            
+            response = self.s3_client.list_objects_v2(
+                Bucket=self.bucket_name,
+                Prefix=prefix
+            )
+            
+            objects = response.get('Contents', [])
+            logger.info(f"S3 객체 목록 조회 완료 - 접두사: {prefix}, 객체 수: {len(objects)}")
+            
+            return objects
+            
+        except Exception as e:
+            logger.error(f"S3 객체 목록 조회 실패 - 접두사: {prefix}, 오류: {e}")
+            return []
 
 # 전역 인스턴스
 s3_service = S3Service()

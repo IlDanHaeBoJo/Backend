@@ -4,6 +4,7 @@ from typing import Dict, List
 from langchain.chat_models import ChatOpenAI
 from langchain.schema import HumanMessage, SystemMessage
 
+from services.patient_image_service import PatientImageService
 
 class LLMService:
     def __init__(self):
@@ -25,19 +26,25 @@ class LLMService:
         # 공통 기본 프롬프트
         self.base_prompt = self._get_base_cpx_prompt()
 
+        # 환자 이미지 서비스 초기화
+        self.patient_image_service = PatientImageService()
+
         # 사용 가능한 시나리오들 (케이스별 고유 정보만)
         self.scenarios = {
             "1": {
                 "name": "흉통 케이스 (김철수, 45세 남성)",
-                "case_info": self._get_chest_pain_case_info()
+                "case_info": self._get_chest_pain_case_info(),
+                "patient_image_url": None  # 시나리오 선택 시 동적으로 설정
             },
             "2": {
                 "name": "복통 케이스 (박영희, 32세 여성)",
-                "case_info": self._get_abdominal_pain_case_info()
+                "case_info": self._get_abdominal_pain_case_info(),
+                "patient_image_url": None
             },
             "3": {
                 "name": "신경과 치매 케이스 (나몰라, 63세 남성)",
-                "case_info": self._get_neurology_dementia_case_info()
+                "case_info": self._get_neurology_dementia_case_info(),
+                "patient_image_url": None
             }
         }
 
@@ -47,7 +54,8 @@ class LLMService:
             self.user_states[user_id] = {
                 'scenario': None,
                 'system_prompt': '',
-                'memories': []
+                'memories': [],
+                'patient_image_url': None
             }
         return self.user_states[user_id]
 
@@ -61,6 +69,18 @@ class LLMService:
             case_info = self.scenarios[scenario_id]["case_info"]
             user_state['system_prompt'] = self.base_prompt + "\n\n" + case_info
             
+            # 환자 이미지 URL 설정
+            try:
+                representative_image = self.patient_image_service.get_scenario_representative_image(scenario_id)
+                if representative_image:
+                    user_state['patient_image_url'] = representative_image['s3_url']
+                    self.scenarios[scenario_id]['patient_image_url'] = representative_image['s3_url']
+                    print(f"✅ [{user_id}] 시나리오 {scenario_id} 환자 이미지 설정: {representative_image['filename']}")
+                else:
+                    print(f"⚠️ [{user_id}] 시나리오 {scenario_id}의 환자 이미지가 없습니다.")
+            except Exception as e:
+                print(f"⚠️ [{user_id}] 환자 이미지 조회 실패: {e}")
+            
             print(f"✅ [{user_id}] 시나리오 선택: {self.scenarios[scenario_id]['name']}")
             return True
         else:
@@ -70,6 +90,36 @@ class LLMService:
     def get_available_scenarios(self) -> Dict[str, str]:
         """사용 가능한 시나리오 목록 반환"""
         return {k: v["name"] for k, v in self.scenarios.items()}
+
+    def get_scenario_info(self, scenario_id: str) -> Dict:
+        """시나리오 정보 반환 (이미지 URL 포함)"""
+        if scenario_id in self.scenarios:
+            scenario_info = self.scenarios[scenario_id].copy()
+            
+            # 환자 이미지 URL이 없으면 동적으로 조회
+            if not scenario_info.get('patient_image_url'):
+                try:
+                    representative_image = self.patient_image_service.get_scenario_representative_image(scenario_id)
+                    if representative_image:
+                        scenario_info['patient_image_url'] = representative_image['s3_url']
+                except Exception as e:
+                    print(f"⚠️ 시나리오 {scenario_id} 환자 이미지 조회 실패: {e}")
+            
+            return scenario_info
+        return None
+
+    def get_user_scenario_info(self, user_id: str) -> Dict:
+        """사용자의 현재 시나리오 정보 반환"""
+        user_state = self._get_or_create_user_state(user_id)
+        scenario_id = user_state.get('scenario')
+        
+        if scenario_id:
+            scenario_info = self.get_scenario_info(scenario_id)
+            if scenario_info:
+                scenario_info['patient_image_url'] = user_state.get('patient_image_url')
+                return scenario_info
+        
+        return None
 
     def _get_base_cpx_prompt(self) -> str:
         """CPX 공통 기본 프롬프트"""
