@@ -88,32 +88,21 @@ class SERService:
             )
             
             # 응답 파싱
-            result = json.loads(response['Body'].read().decode())
+            response_body = response['Body'].read().decode()
+            print(f"🔍 SageMaker 응답 (raw): {response_body}")  # 디버깅용
+            result = json.loads(response_body)
             
-            # 결과 형식 통일 (SageMaker 응답을 기존 형식에 맞게 변환)
-            if 'predictions' in result and len(result['predictions']) > 0:
-                prediction = result['predictions'][0]
-                
-                # 감정 라벨과 확률 추출
-                if 'emotion_scores' in prediction:
-                    emotion_scores = prediction['emotion_scores']
-                    predicted_emotion = max(emotion_scores.keys(), key=lambda k: emotion_scores[k])
-                    confidence = emotion_scores[predicted_emotion]
-                else:
-                    # 기본 형식이 다를 경우 대비
-                    predicted_emotion = prediction.get('predicted_emotion', 'Unknown')
-                    confidence = prediction.get('confidence', 0.0)
-                    emotion_scores = prediction.get('emotion_scores', {})
-                
+            # SageMaker 응답 처리 (직접 형식)
+            if 'predicted_emotion' in result and 'confidence' in result and 'emotion_scores' in result:
                 return {
                     "success": True,
-                    "predicted_emotion": predicted_emotion,
-                    "confidence": confidence,
-                    "emotion_scores": emotion_scores,
+                    "predicted_emotion": result['predicted_emotion'],
+                    "confidence": result['confidence'],
+                    "emotion_scores": result['emotion_scores'],
                     "source": "sagemaker_endpoint"
                 }
             else:
-                return {"error": "SageMaker 엔드포인트에서 유효하지 않은 응답을 받았습니다"}
+                return {"error": f"예상하지 못한 응답 형식: {result}"}
                 
         except Exception as e:
             logger.error(f"SageMaker 엔드포인트 호출 중 오류 발생: {e}")
