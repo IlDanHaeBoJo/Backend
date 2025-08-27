@@ -394,6 +394,7 @@ async def websocket_endpoint(websocket: WebSocket, user_id: str):
             "type": "session_started",
             "message": f"🏥 CPX 시스템에 연결되었습니다! ({user_id})\n\n 기억력 저하 시나리오가 설정되었습니다.\n지금부터 환자에게 말을 걸어보세요.",
             "scenario_id": default_scenario_id,
+            "result_id": cpx_result_id,
             "avatar_action": "ready"
         }, ensure_ascii=False))
         
@@ -493,5 +494,3 @@ async def handle_audio_chunk(websocket: WebSocket, user_id: str, audio_chunk: by
                     
     except Exception as e:
         logger.error(f"오디오 청크 처리 오류: {e}")
-
- 
