@@ -18,6 +18,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from core.config import settings
 from core.startup import service_manager
+from utils.logging_config import setup_logging
 
 from routes import admin_notices, api, student_notices, websocket, auth, cpx, attachments, user_management, privacy, cpx_details_test
 
