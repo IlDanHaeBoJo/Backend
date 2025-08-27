@@ -533,6 +533,7 @@ JSON 응답:
                             "quality": final_state.get("quality_evaluation", {}),
                             "comprehensive": final_state.get("comprehensive_evaluation", {})
                         },
+                        "markdown_feedback": final_state.get("markdown_feedback"),
                         "evaluation_method": "3단계 의학적 분석",
                         "system_info": {
                             "version": "v2.0",
@@ -999,11 +1000,6 @@ JSON 응답:
                 print(f"❌ [{session_id}] 데이터베이스 업데이트를 건너뜁니다. JSON 파일만 저장됩니다.")
                 return
             
-            # 마크다운 피드백 생성
-            markdown_feedback = None
-            if "markdown_feedback" in evaluation_result:
-                markdown_feedback = evaluation_result["markdown_feedback"]
-            
             # CPX Details 및 Evaluations 업데이트
             db_gen = get_db()
             db = await db_gen.__anext__()
@@ -1017,7 +1013,12 @@ JSON 응답:
                     system_evaluation_data=evaluation_result
                 )
                 
-
+                # CPX Results 상태 업데이트 (자동 평가 완료)
+                # 자동 평가가 완료되었으므로 상태를 "완료"로 변경
+                await cpx_service.update_cpx_result_status(
+                    result_id=result_id,
+                    new_status="완료"
+                )
                 
                 print(f"✅ CPX Details 및 Evaluations 업데이트 완료: result_id={result_id}, session_id={session_id}")
                 
