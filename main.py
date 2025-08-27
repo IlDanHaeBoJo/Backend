@@ -18,12 +18,17 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from core.config import settings
 from core.startup import service_manager
+
 from routes import admin_notices, api, student_notices, websocket, auth, cpx, attachments, user_management, privacy, cpx_details_test
 
 logger = logging.getLogger(__name__)
 
 # 환경변수 로드 (uvicorn이 별도 프로세스로 실행될 때를 대비)
 load_dotenv()
+
+# 로깅 설정 (SQLAlchemy INFO 로그 제거)
+setup_logging(log_level=settings.LOG_LEVEL)
+logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):

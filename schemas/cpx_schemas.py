@@ -21,6 +21,7 @@ class CpxEvaluationResponse(CpxEvaluationBase):
     evaluation_date: datetime
     created_at: datetime
     updated_at: datetime
+    markdown_feedback: Optional[str] = Field(None, description="평가 결과를 마크다운 형식으로 변환한 피드백")
 
     class Config:
         from_attributes = True
@@ -61,5 +62,5 @@ class CpxResultsResponse(CpxResultsBase):
 
 # CPX 상세 정보와 평가를 포함하는 응답 스키마 (사용자 및 관리자 상세 조회용)
 class CpxFullDetailsResponse(CpxResultsResponse):
-    cpx_detail: Optional[CpxDetailsResponse] = None
+    cpx_details: Optional[CpxDetailsResponse] = None
     cpx_evaluation: Optional[CpxEvaluationResponse] = None

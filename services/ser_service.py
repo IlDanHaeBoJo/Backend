@@ -23,60 +23,9 @@ class SERService:
         print("🎭 SER 서비스 초기화 완료")
     
     async def load_model(self):
-        """감정 분석 모델 로드 (지연 로딩)"""
-        if self.emotion_model is not None:
-            return True
-        
-        try:
-            print("🎭 감정 분석 모델 로드 중...")
-            
-            # 커스텀 모델이 있으면 사용
-            if self.ser_model_path.exists():
-                from transformers import Wav2Vec2Processor
-                from SER.finetune_direct import custom_Wav2Vec2ForEmotionClassification
-                
-                self.emotion_model = custom_Wav2Vec2ForEmotionClassification.from_pretrained(
-                    str(self.ser_model_path)
-                )
-                self.emotion_processor = Wav2Vec2Processor.from_pretrained(
-                    str(self.ser_model_path)
-                )
-                
-                print("✅ 커스텀 감정 분석 모델 로드 완료")
-            else:
-                # 기본 모델 사용
-                from transformers import Wav2Vec2ForSequenceClassification, Wav2Vec2Processor, Wav2Vec2Config
-                
-                model_name = "kresnik/wav2vec2-large-xlsr-korean"
-                label2id = {label: i for i, label in enumerate(self.emotion_labels)}
-                id2label = {i: label for i, label in enumerate(self.emotion_labels)}
-                
-                config = Wav2Vec2Config.from_pretrained(
-                    model_name,
-                    num_labels=len(self.emotion_labels),
-                    label2id=label2id,
-                    id2label=id2label,
-                    finetuning_task="emotion_classification"
-                )
-                
-                self.emotion_model = Wav2Vec2ForSequenceClassification.from_pretrained(
-                    model_name,
-                    config=config,
-                    ignore_mismatched_sizes=True
-                )
-                self.emotion_processor = Wav2Vec2Processor.from_pretrained(model_name)
-                
-                print("✅ 기본 감정 분석 모델 로드 완료")
-            
-            # 모델을 평가 모드로 설정
-            self.emotion_model.eval()
-            return True
-            
-        except Exception as e:
-            logger.error(f"감정 분석 모델 로드 실패: {e}")
-            self.emotion_model = None
-            self.emotion_processor = None
-            return False
+        """감정 분석 모델 로드 (SageMaker 사용으로 인해 불필요)"""
+        print("🎭 SageMaker를 사용하므로 로컬 모델 로드가 필요하지 않습니다")
+        return True
     
     async def analyze_emotion_from_buffer(self, audio_buffer: bytearray) -> Dict:
         """
@@ -88,11 +37,8 @@ class SERService:
         Returns:
             감정 분석 결과 딕셔너리
         """
-        # 모델이 로드되지 않았으면 로드 시도
-        if self.emotion_model is None:
-            model_loaded = await self.load_model()
-            if not model_loaded:
-                return {"error": "감정 분석 모델을 로드할 수 없습니다"}
+        # SageMaker를 사용하므로 로컬 모델 로드 불필요
+        pass
         
         try:
             if not audio_buffer or len(audio_buffer) == 0:

@@ -16,8 +16,7 @@ class LLMService:
 
         self.llm = ChatOpenAI(
             openai_api_key=api_key,
-            model_name="gpt-3.5-turbo",
-            temperature=0.7,
+            model_name="gpt-4.1-mini",
             max_tokens=1000
         )
 
@@ -143,7 +142,7 @@ class LLMService:
         
         # 공통 프롬프트 + 시나리오 정보 조합
         case_info = self._convert_scenario_to_prompt(self.scenario_data)
-        user_state['system_prompt'] = self.base_prompt + "\n\n" + case_info
+        user_state['system_prompt'] = self.base_prompt + "\n\n" + "*시나리오 정보*\n" + case_info
         
         patient_name = self.scenario_data.get("scenario_info", {}).get("patient_name", "Unknown")
         print(f"✅ [{user_id}] 기억력 저하 시나리오 자동 선택: {patient_name} 케이스")
@@ -177,10 +176,8 @@ class LLMService:
 - 불필요한 추가 설명 금지
 
 【답변 방식】
-- 아래 시나리오 정보를 바탕으로 환자 역할 연기
-- 질문받은 것만 간단히 답변
-- 모르면 "잘 모르겠어요"
-- 자연스럽고 솔직하게
+- 아래 *시나리오 정보*를 바탕으로 환자 역할 연기
+- 질문받은 것만 간단히자연스럽고 솔직하게 답변
 """
 
 
@@ -195,10 +192,6 @@ class LLMService:
 
         # 사용자별 대화 기록 사용
         memory = user_state['memories']
-
-        # 메시지 구성 (사용자별 시나리오 프롬프트 사용)
-        print(f"🔍 [{user_id}] 시스템 프롬프트 길이: {len(user_state['system_prompt'])} 문자")
-        print(f"🔍 [{user_id}] 시스템 프롬프트 앞부분: {user_state['system_prompt'][:200]}...")
         messages = [SystemMessage(content=user_state['system_prompt'])]
 
         # 최근 대화 추가 (최근 5개만)
