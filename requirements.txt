@@ -26,3 +26,5 @@ SQLAlchemy==2.0.23
 passlib[bcrypt]==1.7.4
 FastAPI-Mail==1.4.1
 boto3
+sagemaker>=2.200.0
+botocore>=1.31.0

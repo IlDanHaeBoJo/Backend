@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from typing import Optional, List
 from datetime import datetime
 
@@ -30,6 +30,17 @@ class CpxEvaluationResponse(CpxEvaluationBase):
 class CpxDetailsBase(BaseModel):
     memo: Optional[str] = Field(None, description="실습 중 작성한 메모")
     system_evaluation_data: Optional[dict] = Field(None, description="CPX 실습에 대한 AI 평가 결과 및 상세 데이터")
+    
+    @field_validator('system_evaluation_data', mode='before')
+    @classmethod
+    def parse_json_string(cls, v):
+        if isinstance(v, str):
+            import json
+            try:
+                return json.loads(v)
+            except json.JSONDecodeError:
+                return v
+        return v
 
 class CpxDetailsUpdate(CpxDetailsBase):
     pass
@@ -62,5 +73,5 @@ class CpxResultsResponse(CpxResultsBase):
 
 # CPX 상세 정보와 평가를 포함하는 응답 스키마 (사용자 및 관리자 상세 조회용)
 class CpxFullDetailsResponse(CpxResultsResponse):
-    cpx_details: Optional[CpxDetailsResponse] = None
+    cpx_detail: Optional[CpxDetailsResponse] = None
     cpx_evaluation: Optional[CpxEvaluationResponse] = None

@@ -36,7 +36,15 @@ class Settings:
     AWS_ACCESS_KEY_ID: str = os.getenv("AWS_ACCESS_KEY_ID", "")
     AWS_SECRET_ACCESS_KEY: str = os.getenv("AWS_SECRET_ACCESS_KEY", "")
     AWS_REGION: str = os.getenv("AWS_REGION", "ap-northeast-2")
-    S3_BUCKET_NAME: str = os.getenv("S3_BUCKET_NAME", "medicpx")    
+    S3_BUCKET_NAME: str = os.getenv("S3_BUCKET_NAME", "medicpx")
+    
+    # SageMaker 설정
+    SAGEMAKER_SER_ENDPOINT: str = os.getenv("SAGEMAKER_SER_ENDPOINT", "ser-model-public")
+    SAGEMAKER_REGION: str = os.getenv("SAGEMAKER_REGION", "ap-northeast-2")
+    
+    # SageMaker 전용 AWS 자격증명
+    AWS_ACCESS_KEY_ID_SAGE: str = os.getenv("AWS_ACCESS_KEY_ID_SAGE", "")
+    AWS_SECRET_ACCESS_KEY_SAGE: str = os.getenv("AWS_SECRET_ACCESS_KEY_SAGE", "")    
     
     # ChromaDB 설정
     CHROMA_PERSIST_DIRECTORY: str = os.getenv("CHROMA_PERSIST_DIRECTORY", "./chroma_db")
