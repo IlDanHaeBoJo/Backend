@@ -170,12 +170,18 @@ class CpxService:
         cpx_details = details_exec.scalars().first()
 
         if not cpx_details:
-            return None # CpxDetails를 찾을 수 없음 (논리적 오류 가능성)
-
-        if memo is not None:
-            cpx_details.memo = memo
-        if system_evaluation_data is not None:
-            cpx_details.system_evaluation_data = system_evaluation_data
+            cpx_details = CpxDetails(
+                result_id=result_id,
+                memo=memo or "",
+                system_evaluation_data=system_evaluation_data or {}
+            )
+            self.db.add(cpx_details)
+            await self.db.flush()
+        else:
+            if memo is not None:
+                cpx_details.memo = memo
+            if system_evaluation_data is not None:
+                cpx_details.system_evaluation_data = system_evaluation_data
 
         await self.db.commit()
         await self.db.refresh(cpx_details)
