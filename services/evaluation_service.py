@@ -42,6 +42,7 @@ class CPXEvaluationState(TypedDict):
     # 최종 결과
     final_scores: Optional[Dict]
     feedback: Optional[Dict]
+    markdown_feedback: Optional[str]  # 마크다운 피드백 추가
     
     # 메타데이터
     evaluation_metadata: Optional[Dict]
@@ -458,23 +459,55 @@ JSON 응답:
         }
         
         # 마크다운 피드백 생성
+        print(f"🔍 DEBUG [{state['user_id']}] 마크다운 피드백 생성 시작")
         try:
+            # generate_evaluation_markdown 함수가 기대하는 전체 구조 생성
             evaluation_data = {
+                "user_id": state['user_id'],
+                "scenario_id": state['scenario_id'],
+                "duration_minutes": 0,  # 실제 duration이 있다면 사용
                 "langgraph_text_analysis": {
+                    "scores": final_result["final_scores"],
+                    "feedback": final_result["feedback"], 
+                    "detailed_analysis": {
+                        "completeness": rag_completeness,
+                        "quality": quality_assessment,
+                        "comprehensive": comprehensive_result
+                    },
+                    "conversation_summary": {},
+                    # 기존 구조도 유지 (호환성)
                     "completeness_assessment": rag_completeness,
                     "quality_evaluation": quality_assessment,
                     "comprehensive_evaluation": comprehensive_result,
                     "final_scores": final_result["final_scores"]
                 }
             }
+            print(f"🔍 DEBUG [{state['user_id']}] evaluation_data 구성 완료")
+            
             markdown_feedback = self.generate_evaluation_markdown(evaluation_data)
+            print(f"🔍 DEBUG [{state['user_id']}] generate_evaluation_markdown 호출 결과: type={type(markdown_feedback)}, len={len(markdown_feedback) if markdown_feedback else 0}")
+            
+            if markdown_feedback:
+                print(f"🔍 DEBUG [{state['user_id']}] 마크다운 내용 미리보기: {markdown_feedback[:100]}...")
+            else:
+                print(f"🔍 DEBUG [{state['user_id']}] ⚠️ 마크다운이 비어있음!")
+            
+            print(f"✅ [{state['user_id']}] 마크다운 피드백 생성 완료 ({len(markdown_feedback) if markdown_feedback else 0}자)")
+            
+            # final_result에 markdown_feedback 추가
             final_result["markdown_feedback"] = markdown_feedback
-            print(f"✅ [{state['user_id']}] 마크다운 피드백 생성 완료")
+            print(f"🔍 DEBUG [{state['user_id']}] final_result에 markdown_feedback 추가 완료")
+            
+            return final_result
+            
         except Exception as e:
             print(f"❌ [{state['user_id']}] 마크다운 피드백 생성 실패: {e}")
+            import traceback
+            traceback.print_exc()
+            
+            # 오류 발생 시
             final_result["markdown_feedback"] = None
-        
-        return final_result
+            return final_result
 
     # ================================
     # 4. 핵심 평가 로직
@@ -509,6 +542,7 @@ JSON 응답:
                         comprehensive_evaluation=None,
                         final_scores=None,
                         feedback=None,
+                        markdown_feedback=None,  # 마크다운 피드백 초기화
                         evaluation_metadata=None,
                         messages=[]
                     )
@@ -516,12 +550,18 @@ JSON 응답:
                     print(f"🚀 [{session_id}] LangGraph 워크플로우 시작")
                     final_state = self.workflow.invoke(initial_state)
                     
+                    print(f"🔍 DEBUG [{session_id}] final_state keys: {list(final_state.keys()) if isinstance(final_state, dict) else 'Not dict'}")
+                    print(f"🔍 DEBUG [{session_id}] final_state.markdown_feedback: {final_state.get('markdown_feedback')}")
+                    
                     # LangGraph 분석 결과 구성
                     student_questions = [msg for msg in conversation_log if msg.get("role") == "doctor"]
                     conversation_summary = {
                         "total_questions": len(student_questions),
                         "duration_minutes": (session["end_time"] - session["start_time"]).total_seconds() / 60
                     }
+                    
+                    markdown_from_state = final_state.get("markdown_feedback")
+                    print(f"🔍 DEBUG [{session_id}] markdown_from_state: type={type(markdown_from_state)}, value={markdown_from_state}")
                     
                     langgraph_analysis = {
                         "evaluation_metadata": final_state.get("evaluation_metadata", {}),
@@ -533,7 +573,7 @@ JSON 응답:
                             "quality": final_state.get("quality_evaluation", {}),
                             "comprehensive": final_state.get("comprehensive_evaluation", {})
                         },
-                        "markdown_feedback": final_state.get("markdown_feedback"),
+                        "markdown_feedback": markdown_from_state,
                         "evaluation_method": "3단계 의학적 분석",
                         "system_info": {
                             "version": "v2.0",
@@ -1014,7 +1054,6 @@ JSON 응답:
                 )
                 
                 # CPX Results 상태 업데이트 (자동 평가 완료)
-                # 자동 평가가 완료되었으므로 상태를 "완료"로 변경
                 await cpx_service.update_cpx_result_status(
                     result_id=result_id,
                     new_status="완료"
