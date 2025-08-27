@@ -2,7 +2,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import joinedload
 from sqlalchemy.ext.asyncio import AsyncSession # AsyncSession 임포트
 from core.models import CpxResults, CpxDetails, CpxEvaluations, User
-from typing import List, Optional
+from typing import List, Optional, Dict
+import json
 
 class CpxService:
     def __init__(self, db: AsyncSession): # AsyncSession으로 타입 힌트 변경
@@ -179,3 +180,5 @@ class CpxService:
         await self.db.commit()
         await self.db.refresh(cpx_details)
         return cpx_details
+
+

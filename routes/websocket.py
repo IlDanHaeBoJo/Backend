@@ -77,7 +77,7 @@ class AudioProcessor:
             rms = np.sqrt(np.mean(audio_data.astype(np.float32) ** 2))
             
             # 동적 임계값 (환경에 따라 조정 가능)
-            voice_threshold = 300  # 조정 가능
+            voice_threshold = 1000  # 더 높은 임계값으로 노이즈 제거
             
             return rms > voice_threshold
             
@@ -358,7 +358,7 @@ async def websocket_endpoint(websocket: WebSocket, user_id: str):
 
 
         # 기본 시나리오(치매) 설정 및 평가 세션 시작
-        default_scenario_id = "3"  # 치매 시나리오
+        default_scenario_id = "1"  # 치매 시나리오
         session["scenario_id"] = default_scenario_id
         session["session_start_time"] = datetime.now().isoformat()
         

@@ -24,6 +24,16 @@ def setup_logging(
         force=True
     )
     
+    # 불필요한 로그들을 WARNING으로 설정하여 INFO 로그 제거
+    logging.getLogger('sqlalchemy.engine').setLevel(logging.WARNING)
+    logging.getLogger('sqlalchemy.pool').setLevel(logging.WARNING)
+    logging.getLogger('sqlalchemy.dialects').setLevel(logging.WARNING)
+    
+    # HTTP 관련 로그도 WARNING으로 설정
+    logging.getLogger('uvicorn.access').setLevel(logging.WARNING)
+    logging.getLogger('httpx').setLevel(logging.WARNING)
+    logging.getLogger('httpcore').setLevel(logging.WARNING)
+    
     return logging.getLogger(__name__)
 
 def get_logger(name: str) -> logging.Logger:
