@@ -82,8 +82,7 @@ class EvaluationService:
             if api_key:
                 self.llm = ChatOpenAI(
                     openai_api_key=api_key,
-                    model_name="gpt-4o",
-                    temperature=0.1,
+                    model_name="gpt-5-nano",
                     max_tokens=4000
                 )
                 
@@ -444,7 +443,8 @@ JSON 응답:
         
         print(f"✅ [{state['user_id']}] 3단계: 종합 평가 완료 - 최종 점수: {final_score:.1f}/10 ({grade})")
         
-        return {
+        # 최종 결과 구성
+        final_result = {
             **state,
             "comprehensive_evaluation": comprehensive_result,
             "final_scores": {
@@ -456,6 +456,25 @@ JSON 응답:
             "feedback": comprehensive_result["detailed_feedback"],
             "messages": state["messages"] + [HumanMessage(content=f"3단계: 종합 평가 완료 - {final_score:.1f}점 ({grade})")]
         }
+        
+        # 마크다운 피드백 생성
+        try:
+            evaluation_data = {
+                "langgraph_text_analysis": {
+                    "completeness_assessment": rag_completeness,
+                    "quality_evaluation": quality_assessment,
+                    "comprehensive_evaluation": comprehensive_result,
+                    "final_scores": final_result["final_scores"]
+                }
+            }
+            markdown_feedback = self.generate_evaluation_markdown(evaluation_data)
+            final_result["markdown_feedback"] = markdown_feedback
+            print(f"✅ [{state['user_id']}] 마크다운 피드백 생성 완료")
+        except Exception as e:
+            print(f"❌ [{state['user_id']}] 마크다운 피드백 생성 실패: {e}")
+            final_result["markdown_feedback"] = None
+        
+        return final_result
 
     # ================================
     # 4. 핵심 평가 로직
@@ -878,6 +897,92 @@ JSON 응답:
         else:
             return "F"
 
+    def generate_evaluation_markdown(self, evaluation_result: Dict) -> str:
+        """평가 결과를 마크다운 형식으로 생성"""
+        try:
+            langgraph_analysis = evaluation_result.get("langgraph_text_analysis", {})
+            scores = langgraph_analysis.get("scores", {})
+            feedback = langgraph_analysis.get("feedback", {})
+            detailed_analysis = langgraph_analysis.get("detailed_analysis", {})
+            conversation_summary = langgraph_analysis.get("conversation_summary", {})
+            
+            # 기본 정보
+            user_id = evaluation_result.get("user_id", "Unknown")
+            scenario_id = evaluation_result.get("scenario_id", "Unknown")
+            duration = evaluation_result.get("duration_minutes", 0)
+            
+            markdown_content = f"""# CPX 실습 평가 결과
+
+## 1. 점수
+- **총점**: {scores.get('total_score', 0):.1f}점 / 100점 ({scores.get('grade', 'F')}등급)
+- **완성도**: {scores.get('completion_rate', 0):.1%}
+- **품질 점수**: {scores.get('quality_score', 0):.1f}점 / 10점
+
+## 2. 각 단계별 결과
+
+### 완성도 평가
+"""
+            
+            # 완성도 평가 상세 내용
+            completeness = detailed_analysis.get("completeness", {})
+            areas_evaluation = completeness.get("areas_evaluation", {})
+            
+            for area_key, area_data in areas_evaluation.items():
+                area_name = area_data.get("area_name", area_key)
+                completion_rate = area_data.get("completion_rate", 0)
+                completed_guidelines = area_data.get("completed_guidelines", 0)
+                total_guidelines = area_data.get("total_guidelines", 0)
+                
+                # 완성도 상태
+                if completion_rate >= 0.8:
+                    status = "우수"
+                elif completion_rate >= 0.5:
+                    status = "보통"
+                else:
+                    status = "미흡"
+                
+                markdown_content += f"- **{area_name}**: {completion_rate:.1%} ({status})\n"
+
+            # 품질 평가 상세 내용
+            quality = detailed_analysis.get("quality", {})
+            markdown_content += f"""
+### 품질 평가
+- **의학적 정확성**: {quality.get('medical_accuracy', 0):.1f}/10점
+- **의사소통 효율성**: {quality.get('communication_efficiency', 0):.1f}/10점
+- **전문성**: {quality.get('professionalism', 0):.1f}/10점
+- **시나리오 적합성**: {quality.get('scenario_appropriateness', 0):.1f}/10점
+"""
+
+            # 종합 결과 및 권장사항
+            strengths = feedback.get("strengths", [])
+            improvements = feedback.get("improvements", [])
+            
+            markdown_content += "\n## 3. 종합 결과 및 권장사항\n"
+            
+            if strengths:
+                markdown_content += "\n### 우수한 점\n"
+                for strength in strengths[:3]:  # 최대 3개만
+                    markdown_content += f"- {strength}\n"
+            
+            if improvements:
+                markdown_content += "\n### 개선 필요사항\n"
+                for improvement in improvements[:3]:  # 최대 3개만
+                    markdown_content += f"- {improvement}\n"
+            
+            # 학습 권장사항 (간단하게)
+            markdown_content += f"""
+### 학습 권장사항
+1. 완성도가 낮은 영역({', '.join([area for area, data in areas_evaluation.items() if data.get('completion_rate', 0) < 0.5])}) 집중 학습
+2. 질문 기법 및 의사소통 스킬 향상
+3. 시나리오별 반복 연습
+"""
+            
+            return markdown_content
+            
+        except Exception as e:
+            print(f"❌ 마크다운 생성 실패: {e}")
+            return f"# CPX 평가 결과\n\n평가 결과를 불러오는 중 오류가 발생했습니다.\n\n오류 내용: {str(e)}"
+
     # ================================
     # 6. 데이터베이스 및 파일 관리
     # ================================
@@ -894,19 +999,27 @@ JSON 응답:
                 print(f"❌ [{session_id}] 데이터베이스 업데이트를 건너뜁니다. JSON 파일만 저장됩니다.")
                 return
             
-            # CPX Details만 업데이트 (시스템 평가 데이터)
+            # 마크다운 피드백 생성
+            markdown_feedback = None
+            if "markdown_feedback" in evaluation_result:
+                markdown_feedback = evaluation_result["markdown_feedback"]
+            
+            # CPX Details 및 Evaluations 업데이트
             db_gen = get_db()
             db = await db_gen.__anext__()
             try:
                 cpx_service = CpxService(db)
                 
+                # CPX Details 업데이트 (시스템 평가 데이터)
                 await cpx_service.update_cpx_details(
                     result_id=result_id,
                     user_id=int(user_id),
                     system_evaluation_data=evaluation_result
                 )
                 
-                print(f"✅ CPX Details 업데이트 완료: result_id={result_id}, session_id={session_id}")
+
+                
+                print(f"✅ CPX Details 및 Evaluations 업데이트 완료: result_id={result_id}, session_id={session_id}")
                 
             finally:
                 await db_gen.aclose()

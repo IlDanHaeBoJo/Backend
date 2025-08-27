@@ -33,9 +33,9 @@ class STTService:
                 encoding=speech.RecognitionConfig.AudioEncoding.LINEAR16,
                 sample_rate_hertz=settings.AUDIO_SAMPLE_RATE,
                 language_code="ko-KR",  # 한국어
-                model="latest_long",    # 긴 대화용 모델
-                enable_automatic_punctuation=True,  # 자동 문장부호
-                use_enhanced=True,      # 향상된 모델 사용
+                model="latest_short",   # 짧은 발화용 모델
+                enable_automatic_punctuation=True, 
+                use_enhanced=False,     # 기본 모델 사용
             )
             
             logger.info("✅ Google Cloud Speech API 초기화 완료")
@@ -85,7 +85,7 @@ class STTService:
         return {
             "provider": "Google Cloud Speech",
             "language": "ko-KR",
-            "model": "latest_long",
+            "model": "latest_short",
             "client_initialized": self.speech_client is not None,
             "status": "ready" if self.speech_client else "not_initialized"
         }
