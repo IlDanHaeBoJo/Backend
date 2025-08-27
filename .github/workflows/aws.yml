@@ -21,7 +21,7 @@ jobs:
       - name: Trigger SSM Command
         run: |
           aws ssm send-command \
-            --targets "Key=instanceIds,Values=i-00cef412f09bd9641" \
+            --targets "Key=InstanceIds,Values=i-00cef412f09bd9641" \
             --document-name "AWS-RunShellScript" \
             --comment "Deploy FastAPI" \
             --parameters 'commands=["/home/ubuntu/fastapi-project/deploy.sh"]' \
