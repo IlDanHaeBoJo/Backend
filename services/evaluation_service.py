@@ -232,7 +232,7 @@ class EvaluationService:
             "messages": [HumanMessage(content="CPX 평가를 시작합니다.")]
         }
 
-    def _evaluate_rag_completeness(self, state: CPXEvaluationState) -> CPXEvaluationState:
+    async def _evaluate_rag_completeness(self, state: CPXEvaluationState) -> CPXEvaluationState:
         """1단계: RAG 기반 완성도 평가 (병력청취, 신체진찰, 환자교육)"""
         print(f"📋 [{state['user_id']}] 1단계: RAG 기반 완성도 평가 시작")
         
@@ -259,7 +259,7 @@ class EvaluationService:
             structured_sections = self._parse_structured_sections(documents[0])
             
             # 간단한 RAG 가이드라인 비교 평가 실행
-            areas_evaluation[area_key] = self._evaluate_area_simple(
+            areas_evaluation[area_key] = await self._evaluate_area_simple(
                 conversation_text, area_name, structured_sections
             )
         
@@ -298,7 +298,7 @@ class EvaluationService:
             "messages": state["messages"] + [HumanMessage(content=f"1단계: RAG 기반 완성도 평가 완료 - {overall_completeness:.1%}")]
         }
 
-    def _evaluate_quality_assessment(self, state: CPXEvaluationState) -> CPXEvaluationState:
+    async def _evaluate_quality_assessment(self, state: CPXEvaluationState) -> CPXEvaluationState:
         """2단계: 대화 품질 평가 (친절함, 공감, 전문성 등)"""
         print(f"⭐ [{state['user_id']}] 2단계: 품질 평가 시작")
         
@@ -350,7 +350,7 @@ JSON 응답:
 
         try:
             messages = [SystemMessage(content=quality_prompt)]
-            response = self.llm.invoke(messages)
+            response = await self.llm.ainvoke(messages)
             result_text = response.content
             
             print(f"[품질] LLM 응답 원문:\n{result_text[:300]}...")
@@ -548,7 +548,7 @@ JSON 응답:
                     )
                     
                     print(f"🚀 [{session_id}] LangGraph 워크플로우 시작")
-                    final_state = self.workflow.invoke(initial_state)
+                    final_state = await self.workflow.ainvoke(initial_state)
                     
                     print(f"🔍 DEBUG [{session_id}] final_state keys: {list(final_state.keys()) if isinstance(final_state, dict) else 'Not dict'}")
                     print(f"🔍 DEBUG [{session_id}] final_state.markdown_feedback: {final_state.get('markdown_feedback')}")
@@ -628,7 +628,7 @@ JSON 응답:
         print(f"✅ [{session_id}] 종합 평가 완료")
         return evaluation_result
 
-    def _evaluate_area_simple(self, conversation_text: str, area_name: str, structured_sections: dict) -> dict:
+    async def _evaluate_area_simple(self, conversation_text: str, area_name: str, structured_sections: dict) -> dict:
         """단일 단계 RAG 가이드라인 비교 평가 - GPT-4o 통합 평가"""
         
         # 가이드라인 텍스트 구성
@@ -686,7 +686,7 @@ JSON 응답:
 {', '.join([f'    "{section_name}": {{"completed": true/false, "evidence": []}}' for section_name in structured_sections.keys()])}
 }}"""
         
-        result = self._process_evaluation_response(prompt, area_name, structured_sections, stage="통합")
+        result = await self._process_evaluation_response(prompt, area_name, structured_sections, stage="통합")
         
         print(f"[검증] evidence 실제 존재 여부 확인...")
         print(f"[검증] 대화 텍스트 샘플: {conversation_text[:200]}...")
@@ -759,11 +759,11 @@ JSON 응답:
             conversation_parts.append(f"{speaker}: {content}")
         return "\n".join(conversation_parts)
 
-    def _process_evaluation_response(self, prompt: str, area_name: str, structured_sections: dict, stage: str = "") -> dict:
+    async def _process_evaluation_response(self, prompt: str, area_name: str, structured_sections: dict, stage: str = "") -> dict:
         """평가 응답 처리 공통 함수"""
         try:
             messages = [{"role": "user", "content": prompt}]
-            response = self.llm.invoke(messages)
+            response = await self.llm.ainvoke(messages)
             result_text = response.content
             
             print(f"[{stage}] LLM 응답 원문:\n{result_text[:300]}...")
