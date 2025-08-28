@@ -396,20 +396,24 @@ JSON 응답:
                 }
             }
 
-    def _generate_comprehensive_results(self, state: CPXEvaluationState) -> CPXEvaluationState:
-        """3단계: 종합 평가 및 최종 결과 생성"""
-        print(f"🎯 [{state['user_id']}] 3단계: 종합 평가 시작")
+    async def _generate_comprehensive_results(self, state: CPXEvaluationState) -> CPXEvaluationState:
+        """3단계: SER 감정 분석 + 종합 평가 및 최종 결과 생성"""
+        print(f"🎯 [{state['user_id']}] 3단계: SER 감정 분석 + 종합 평가 시작")
         
         # 1단계와 2단계 결과 수집
         rag_completeness = state.get("completeness_assessment", {})
         quality_assessment = state.get("quality_evaluation", {})
         
-        # 최종 점수 계산 (가중치: 완성도 50%, 품질 50%)
+        # SER 감정 분석 수행
+        ser_evaluation = await self._evaluate_ser_emotions(state["conversation_log"])
+        
+        # 최종 점수 계산 (가중치: 완성도 30%, 품질 30%, SER 감정 40%)
         completeness_score = rag_completeness.get("overall_completeness", 0.5) * 10  # 0-10 스케일로 변환
         quality_score = quality_assessment.get("overall_quality_score", 6)
+        ser_score = ser_evaluation.get("ser_score", 6)  # SER 기반 감정 점수
         
-        # 가중치 적용: 완성도 50%, 품질 50%
-        final_score = (completeness_score * 0.5) + (quality_score * 0.5)
+        # 가중치 적용: 완성도 30%, 품질 30%, SER 감정 40%
+        final_score = (completeness_score * 0.3) + (quality_score * 0.3) + (ser_score * 0.4)
         final_score = min(10, max(0, final_score))  # 0-10 범위로 제한
         
         # 등급 계산
@@ -432,14 +436,19 @@ JSON 응답:
         strengths.extend(quality_assessment.get("quality_strengths", []))
         improvements.extend(quality_assessment.get("quality_improvements", []))
         
+        # 3단계 SER에서 강점/개선점 추가
+        strengths.extend(ser_evaluation.get("ser_strengths", []))
+        improvements.extend(ser_evaluation.get("ser_improvements", []))
+        
         comprehensive_result = {
             "final_score": round(final_score, 1),
             "grade": grade,
             "detailed_feedback": {
                 "strengths": strengths[:5],  # 최대 5개
                 "improvements": improvements[:5],  # 최대 5개
-                "overall_analysis": f"RAG 기반 평가 결과 {final_score * 10:.1f}% 완성"
-            }
+                "overall_analysis": f"3단계 통합 평가 결과 {final_score * 10:.1f}점 (완성도 30% + 품질 30% + 감정 40%)"
+            },
+            "ser_evaluation": ser_evaluation  # SER 평가 결과 포함
         }
         
         print(f"✅ [{state['user_id']}] 3단계: 종합 평가 완료 - 최종 점수: {final_score:.1f}/10 ({grade})")
@@ -938,6 +947,206 @@ JSON 응답:
         else:
             return "F"
 
+    async def _evaluate_ser_emotions(self, conversation_log: List[Dict]) -> Dict:
+        """3단계: SER 감정 분석 평가 - Kind 높아야 하고 문맥에 맞는 감정인지 LLM이 판단"""
+        print(f"🎭 SER 감정 분석 평가 시작")
+        
+        # SER 감정 분석 결과 수집
+        emotion_analysis = self._analyze_conversation_emotions(conversation_log)
+        
+        if emotion_analysis["total_analyzed_utterances"] == 0:
+            return {
+                "ser_score": 5,  # 중간 점수
+                "emotion_analysis": "감정 분석 데이터가 없습니다.",
+                "ser_strengths": [],
+                "ser_improvements": ["음성 감정 분석 데이터 확보 필요"],
+                "detailed_feedback": "SER 감정 분석을 수행할 수 있는 데이터가 부족합니다."
+            }
+        
+        # 대화 텍스트와 감정 데이터 구성
+        conversation_text = self._build_conversation_text(conversation_log)
+        emotion_summary = self._generate_emotion_summary(emotion_analysis)
+        
+        # 각 의사 발화별 감정 분석 결과 상세 정보
+        emotion_details = ""
+        for emotion_data in emotion_analysis["doctor_emotions"]:
+            emotion_details += f"발화: \"{emotion_data['text']}\"\n"
+            emotion_details += f"  → 감정: {emotion_data['predicted_emotion']} (신뢰도: {emotion_data['confidence']:.2f})\n"
+            emotion_details += f"  → 감정 점수: {emotion_data['emotion_scores']}\n\n"
+        
+        ser_prompt = f"""
+당신은 의료 커뮤니케이션 전문가입니다. 의사의 음성 감정 분석 결과를 평가하세요.
+
+【전체 대화】:
+{conversation_text}
+
+【감정 분석 통계】:
+{emotion_summary}
+
+【발화별 상세 감정 분석】:
+{emotion_details}
+
+다음 기준으로 의사의 감정적 적절성을 평가하세요:
+
+【평가 기준】:
+1. **Kind(친절함) 비율**: 의료진은 기본적으로 친절해야 함 (높을수록 좋음)
+2. **상황별 감정 적절성**: 
+   - 환자가 걱정을 표현할 때 → Anxious(공감)가 적절할 수 있음
+   - 정보 전달/설명 시 → Kind(친절함)가 적절
+   - 진찰/검사 시 → 약간의 Dry(건조함)는 전문성으로 볼 수 있음
+3. **감정 일관성**: 급격한 감정 변화가 있는지
+4. **환자 상황 고려**: 환자의 상태/말에 맞는 감정인지
+
+【점수 기준】:
+- Kind 비율이 70% 이상: 8-10점
+- Kind 비율이 50-70%: 6-8점  
+- Kind 비율이 30-50%: 4-6점
+- Kind 비율이 30% 미만: 1-4점
+- 단, 상황에 맞는 Anxious나 적절한 Dry는 가점 요소
+
+1-10점으로 평가하고 구체적인 피드백을 제공하세요.
+
+JSON 응답:
+{{
+    "ser_score": 점수(1-10),
+    "kind_ratio_assessment": "Kind 비율에 대한 평가",
+    "contextual_appropriateness": "상황별 감정 적절성 평가", 
+    "emotional_consistency": "감정 일관성 평가",
+    "patient_consideration": "환자 상황 고려도 평가",
+    "ser_strengths": ["감정적으로 우수한 점들"],
+    "ser_improvements": ["감정적으로 개선이 필요한 점들"],
+    "detailed_feedback": "종합적인 감정 평가 피드백"
+}}"""
+
+        try:
+            messages = [SystemMessage(content=ser_prompt)]
+            response = await self.llm.ainvoke(messages)
+            result_text = response.content
+            
+            print(f"[SER] LLM 응답 원문:\n{result_text[:300]}...")
+            
+            # JSON 파싱
+            json_match = re.search(r'\{.*\}', result_text, re.DOTALL)
+            if json_match:
+                json_str = json_match.group()
+                ser_result = json.loads(json_str)
+                print(f"[SER] JSON 파싱 성공")
+            else:
+                print(f"[SER] JSON 형식을 찾을 수 없습니다.")
+                ser_result = {
+                    "ser_score": 6,
+                    "kind_ratio_assessment": "Kind 비율 분석 실패",
+                    "contextual_appropriateness": "상황별 적절성 분석 실패",
+                    "emotional_consistency": "감정 일관성 분석 실패", 
+                    "patient_consideration": "환자 고려도 분석 실패",
+                    "ser_strengths": ["기본 감정 분석 완료"],
+                    "ser_improvements": ["SER 평가 개선 필요"],
+                    "detailed_feedback": "SER 분석에서 오류가 발생했습니다."
+                }
+            
+            # 감정 통계 데이터 추가
+            ser_result["emotion_statistics"] = emotion_analysis["emotion_statistics"]
+            ser_result["total_analyzed_utterances"] = emotion_analysis["total_analyzed_utterances"]
+            
+            print(f"✅ SER 감정 분석 평가 완료 - 점수: {ser_result.get('ser_score', 6):.1f}점")
+            
+            return ser_result
+            
+        except Exception as e:
+            print(f"❌ SER 감정 분석 평가 실패: {e}")
+            return {
+                "ser_score": 5,
+                "kind_ratio_assessment": "평가 오류",
+                "contextual_appropriateness": "평가 오류",
+                "emotional_consistency": "평가 오류",
+                "patient_consideration": "환자 상황 고려도 평가", 
+                "ser_strengths": ["기본 평가 완료"],
+                "ser_improvements": ["SER 평가 오류로 기본값 사용"],
+                "detailed_feedback": f"SER 평가 중 오류 발생: {str(e)}",
+                "emotion_statistics": emotion_analysis.get("emotion_statistics", {}),
+                "total_analyzed_utterances": emotion_analysis.get("total_analyzed_utterances", 0)
+            }
+
+    def _analyze_conversation_emotions(self, conversation_log: List[Dict]) -> Dict:
+        """대화에서 의사의 감정 분석 결과 수집 및 분석"""
+        doctor_emotions = []
+        emotion_stats = {"Kind": 0, "Anxious": 0, "Dry": 0, "total_utterances": 0}
+        
+        for msg in conversation_log:
+            if msg.get("role") == "doctor" and msg.get("emotion"):
+                emotion_data = msg.get("emotion")
+                predicted_emotion = emotion_data.get("predicted_emotion")
+                confidence = emotion_data.get("confidence", 0)
+                emotion_scores = emotion_data.get("emotion_scores", {})
+                
+                doctor_emotions.append({
+                    "text": msg.get("content", ""),
+                    "predicted_emotion": predicted_emotion,
+                    "confidence": confidence,
+                    "emotion_scores": emotion_scores
+                })
+                
+                # 통계 수집
+                if predicted_emotion in emotion_stats:
+                    emotion_stats[predicted_emotion] += 1
+                emotion_stats["total_utterances"] += 1
+        
+        # 전체 감정 비율 계산
+        if emotion_stats["total_utterances"] > 0:
+            for emotion in ["Kind", "Anxious", "Dry"]:
+                emotion_stats[f"{emotion}_ratio"] = emotion_stats[emotion] / emotion_stats["total_utterances"]
+        
+        return {
+            "doctor_emotions": doctor_emotions,
+            "emotion_statistics": emotion_stats,
+            "total_analyzed_utterances": len(doctor_emotions)
+        }
+
+    def _generate_emotion_summary(self, emotion_analysis: Dict) -> str:
+        """감정 분석 결과를 요약 텍스트로 생성"""
+        stats = emotion_analysis.get("emotion_statistics", {})
+        doctor_emotions = emotion_analysis.get("doctor_emotions", [])
+        
+        if not doctor_emotions:
+            return "감정 분석 데이터가 없습니다."
+        
+        total = stats.get("total_utterances", 0)
+        if total == 0:
+            return "분석 가능한 의사 발화가 없습니다."
+        
+        # 감정별 비율
+        kind_ratio = stats.get("Kind_ratio", 0)
+        anxious_ratio = stats.get("Anxious_ratio", 0) 
+        dry_ratio = stats.get("Dry_ratio", 0)
+        
+        # 주요 감정 파악
+        dominant_emotion = "Kind"
+        if anxious_ratio > kind_ratio and anxious_ratio > dry_ratio:
+            dominant_emotion = "Anxious"
+        elif dry_ratio > kind_ratio and dry_ratio > anxious_ratio:
+            dominant_emotion = "Dry"
+        
+        # 평균 신뢰도 계산
+        avg_confidence = sum(e.get("confidence", 0) for e in doctor_emotions) / len(doctor_emotions)
+        
+        summary = f"""총 {total}개 발화 분석:
+- Kind (친절함): {kind_ratio:.1%}
+- Anxious (불안함): {anxious_ratio:.1%} 
+- Dry (건조함): {dry_ratio:.1%}
+- 주요 감정: {dominant_emotion}
+- 평균 신뢰도: {avg_confidence:.2f}
+
+감정별 발화 예시:"""
+        
+        # 각 감정별 대표 발화 1개씩 추가
+        for emotion in ["Kind", "Anxious", "Dry"]:
+            emotion_examples = [e for e in doctor_emotions if e.get("predicted_emotion") == emotion]
+            if emotion_examples:
+                best_example = max(emotion_examples, key=lambda x: x.get("confidence", 0))
+                summary += f"\n- {emotion}: \"{best_example.get('text', '')[:30]}...\" (신뢰도: {best_example.get('confidence', 0):.2f})"
+        
+        return summary
+
     def generate_evaluation_markdown(self, evaluation_result: Dict) -> str:
         """평가 결과를 마크다운 형식으로 생성"""
         try:
@@ -954,14 +1163,14 @@ JSON 응답:
             
             markdown_content = f"""# CPX 실습 평가 결과
 
-## 1. 점수
+## 1. 종합 점수
 - **총점**: {scores.get('total_score', 0):.1f}점 / 100점 ({scores.get('grade', 'F')}등급)
-- **완성도**: {scores.get('completion_rate', 0):.1%}
-- **품질 점수**: {scores.get('quality_score', 0):.1f}점 / 10점
+- **필수항목 달성률**: {scores.get('completion_rate', 0):.1%}
+- **진료 수행도**: {scores.get('quality_score', 0):.1f}점 / 10점
 
 ## 2. 각 단계별 결과
 
-### 완성도 평가
+### 필수항목 달성 평가
 """
             
             # 완성도 평가 상세 내용
@@ -984,14 +1193,24 @@ JSON 응답:
                 
                 markdown_content += f"- **{area_name}**: {completion_rate:.1%} ({status})\n"
 
-            # 품질 평가 상세 내용
+            # 의사소통 평가 상세 내용
             quality = detailed_analysis.get("quality", {})
             markdown_content += f"""
-### 품질 평가
+### 진료 수행 평가
 - **의학적 정확성**: {quality.get('medical_accuracy', 0):.1f}/10점
-- **의사소통 효율성**: {quality.get('communication_efficiency', 0):.1f}/10점
+- **의사소통 능력**: {quality.get('communication_efficiency', 0):.1f}/10점
 - **전문성**: {quality.get('professionalism', 0):.1f}/10점
 - **시나리오 적합성**: {quality.get('scenario_appropriateness', 0):.1f}/10점
+"""
+
+            # SER 감정 분석 결과 추가
+            ser_evaluation = detailed_analysis.get("comprehensive", {}).get("ser_evaluation", {})
+            if ser_evaluation:
+                markdown_content += f"""
+### 감정 평가
+- ** 감정 점수**: {ser_evaluation.get('ser_score', 0):.1f}/10점
+
+**상세 피드백**: {ser_evaluation.get('detailed_feedback', '음성 톤 분석 결과가 없습니다.')}
 """
 
             # 종합 결과 및 권장사항
