@@ -83,7 +83,7 @@ class EvaluationService:
             if api_key:
                 self.llm = ChatOpenAI(
                     openai_api_key=api_key,
-                    model_name="gpt-5-nano",
+                    model_name="gpt-5",
                     max_tokens=4000
                 )
                 
