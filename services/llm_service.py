@@ -16,7 +16,7 @@ class LLMService:
 
         self.llm = ChatOpenAI(
             openai_api_key=api_key,
-            model_name="gpt-4.1-mini",
+            model_name="gpt-5-mini",
             max_tokens=1000
         )
 
