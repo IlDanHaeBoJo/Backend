@@ -8,6 +8,7 @@ google-cloud-texttospeech>=2.16.0
 langchain>=0.3.0
 langchain-openai>=0.2.0
 langchain-community>=0.3.0
+faiss-cpu>=1.7.4
 langgraph>=0.6.3
 langgraph-checkpoint>=1.0.0
 chromadb==0.4.15
