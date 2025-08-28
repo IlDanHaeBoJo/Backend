@@ -1,11 +1,79 @@
 import torch
 import torch.nn as nn
+from torch.nn import functional as F
 from torch.autograd import Function
+from transformers import Wav2Vec2ForSequenceClassification
+import json
+
+
+class custom_Wav2Vec2ForEmotionClassification(Wav2Vec2ForSequenceClassification):
+    def __init__(self, config):
+        super().__init__(config)
+        self.adversary = ContentAdversary(
+            input_size=config.hidden_size, 
+            num_chars=config.char_vocab_size 
+        )
+        self.speaker_adversary = SpeakerAdversary(
+            input_size = config.hidden_size,
+            num_speakers = config.num_speakers
+        )
+        self.pooler = AttentivePool(config.hidden_size)
+        self.stats_projector = nn.Linear(2 * config.hidden_size,  # 2D -> D
+                                   config.hidden_size)
+
+    def forward(
+        self,
+        input_values,
+        attention_mask=None,
+        output_attentions=None,
+        output_hidden_states=None,
+        labels=None,
+        content_labels=None, 
+        content_labels_lengths=None,
+        adv_lambda=1.0,
+        speaker_ids=None,
+        class_weights = None,
+    ):
+
+        outputs = self.wav2vec2(
+            input_values,
+            attention_mask=attention_mask,
+            output_attentions=output_attentions,
+            output_hidden_states=output_hidden_states,
+            return_dict=True,
+        )
+
+        hidden_states = outputs.last_hidden_state
+
+        # 1. 감정 분류
+        pooled_output = self.pooler(hidden_states)
+        pooled_output = self.stats_projector(pooled_output)
+        pooled_output = self.projector(pooled_output)
+        emotion_logits = self.classifier(pooled_output)
+
+        # 2. 내용 분류 (적대자)
+        spk_logits = None
+        loss = None
+        if labels is not None and content_labels is not None:
+            # 3. 손실 계산
+            loss_emotion_fct = nn.CrossEntropyLoss(class_weights=class_weights)
+            loss_emotion = loss_emotion_fct(emotion_logits.view(-1, self.config.num_labels), labels.view(-1))
+            loss = loss_emotion
+
+        if adv_lambda > 0 and speaker_ids is not None:
+            spk_logits = self.speaker_adversary(hidden_states, adv_lambda)
+            loss_spk = F.cross_entropy(spk_logits, speaker_ids)
+            loss = loss + adv_lambda * loss_spk if loss is not None else adv_lambda * loss_spk
+
+        return {
+            "loss": loss, 
+            "emotion_logits": emotion_logits, 
+        }
 
 class GradientReversalLayer(Function):
     """
     Gradient Reversal Layer (GRL)
-    - Forward pass: 입력값을 그대로 반환
+    - Forward pass: 항등 함수 (입력을 그대로 통과)
     - Backward pass: 그래디언트의 부호를 반전시킴
     """
     @staticmethod
@@ -58,6 +126,7 @@ class SpeakerAdversary(nn.Module):
             nn.Linear(hidden, num_speakers)
         )
     def forward(self, hidden_states, lambda_):
+        # frame-level -> utterance-level pooling
         x = hidden_states.mean(dim=1)
         x = self.grl(x, lambda_)
         return self.net(x)
